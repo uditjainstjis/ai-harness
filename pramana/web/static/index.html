@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pramana Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff7a3d'/%3E%3Cstop offset='1' stop-color='%23d6336c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand" onclick="go('home')">
+    <svg viewBox="0 0 32 32" class="logo"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7a3d"/><stop offset="1" stop-color="#d6336c"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#lg)"/><path d="M9 16.5l4.5 4.5L23 11.5" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div><b>Pramana</b> <span class="studio">Studio</span><div class="sub">the coding agent whose fixes come with proof</div></div>
+  </div>
+  <div class="top-right">
+    <button class="model-pill" id="model-pill" onclick="openSettings()"><span class="dot"></span><span id="model-text">checking model…</span></button>
+    <button class="icon-btn" title="Light / dark" onclick="toggleTheme()">◐</button>
+  </div>
+</header>
+
+<main id="home" class="view">
+  <section class="hero">
+    <h1>What should I fix?</h1>
+    <p class="lede">Describe it in plain words and give me the repository. I reproduce the problem, change the code,
+      and prove the fix on the original and the patched code before I call it done.</p>
+    <div class="composer card">
+      <textarea id="prompt" rows="4" placeholder="e.g. “Signing up with an email that has capital letters creates a duplicate account.”  — or paste a GitHub issue link"></textarea>
+      <div class="repo-row">
+        <span class="gh">⎇</span>
+        <input id="repo" placeholder="Repository — GitHub URL, owner/name, or a folder on this computer (optional if your text has a GitHub link)">
+      </div>
+      <details class="more"><summary>More options</summary>
+        <label>Test command that must pass after the fix (optional)
+          <input id="test" placeholder="e.g. pytest tests/test_signup.py"></label>
+      </details>
+      <div class="composer-foot">
+        <div id="understood" class="understood"></div>
+        <div class="go-group">
+          <label class="model-pick" title="Which model does the work">
+            <span>Model</span><select id="model-select" onchange="pickModel(this.value)"><option>loading…</option></select>
+          </label>
+          <button class="primary" id="go-btn" onclick="startRun()">Fix it <span class="kbd">⌘↵</span></button>
+        </div>
+      </div>
+      <div id="form-error" class="form-error"></div>
+    </div>
+    <div id="api-line" class="api-line"></div>
+    <div class="demos"><span class="muted">No repo handy? Try a real bug:</span><span id="demo-chips"></span></div>
+  </section>
+  <section class="recent" id="recent-wrap" hidden><h3>Recent runs</h3><div id="recent"></div></section>
+</main>
+
+<main id="run" class="view" hidden>
+  <div class="run-head">
+    <button class="link" onclick="go('home')">← New task</button>
+    <div class="run-title"><h2 id="run-title">…</h2><div class="run-meta"><span class="chip" id="run-repo"></span><span class="chip" id="run-model"></span></div></div>
+    <div id="run-status" class="status-pill running"><span class="spin"></span>Starting</div>
+  </div>
+  <ol class="stepper" id="stepper"></ol>
+  <div class="stats">
+    <div><b id="st-time">0s</b><span>elapsed</span></div>
+    <div><b id="st-calls">0</b><span>model calls</span></div>
+    <div><b id="st-tokens">0</b><span>tokens</span></div>
+    <div><b id="st-steps">–</b><span>agent steps</span></div>
+  </div>
+  <div id="verdict" class="verdict" hidden></div>
+  <div class="grid">
+    <section class="card feed-card"><h3>Live activity</h3><div id="feed" class="feed"></div></section>
+    <aside class="evidence">
+      <div class="card ev" id="ev-project" hidden><h4>Project</h4><div class="ev-body"></div></div>
+      <div class="card ev" id="ev-where" hidden><h4>Where the bug likely is</h4><div class="ev-body"></div></div>
+      <div class="card ev" id="ev-criteria" hidden><h4>What a maintainer would check</h4><div class="ev-body"></div></div>
+      <div class="card ev" id="ev-proof" hidden><h4>Proof: original vs patched</h4><div class="ev-body"></div></div>
+      <div class="card ev" id="ev-indep" hidden><h4>Independent test (written blind)</h4><div class="ev-body"></div></div>
+      <div class="card ev" id="ev-review" hidden><h4>Reviewer</h4><div class="ev-body"></div></div>
+    </aside>
+  </div>
+  <section class="card" id="diff-card" hidden>
+    <div class="diff-head"><h3>The change</h3><div class="actions">
+      <a class="btn" id="dl-patch" download>Download patch</a>
+      <a class="btn" id="open-report" target="_blank">Full evidence report</a>
+      <button class="btn" onclick="copyPath()">Copy repo path</button></div></div>
+    <div id="diff"></div>
+  </section>
+</main>
+
+<div id="drawer" class="drawer" hidden>
+  <div class="drawer-panel card">
+    <div class="drawer-head"><h3>Model</h3><button class="icon-btn" onclick="closeSettings()">✕</button></div>
+    <p class="muted small">Pramana works with any provider. The key is only ever read from <code>AI_API_KEY</code>, or typed here for this session (kept in memory, never saved).</p>
+    <div class="seg" id="mode-seg">
+      <button data-mode="env" onclick="setMode('env')">Key from AI_API_KEY</button>
+      <button data-mode="api" onclick="setMode('api')">Paste a key</button>
+    </div>
+    <div id="mode-claude" class="mode-box" hidden>
+      <label>Model <select id="claude-model"><option>sonnet</option><option>opus</option><option>haiku</option></select></label>
+      <p class="muted small">Uses the Claude Code app already logged in on this computer.</p>
+    </div>
+    <div id="mode-api" class="mode-box" hidden>
+      <label>API key <input id="api-key" type="password" placeholder="paste a key (DeepSeek, OpenRouter, NVIDIA, OpenAI, Anthropic, …)"></label>
+      <label>Model (optional) <input id="api-model" placeholder="e.g. deepseek-flash — blank = provider default"></label>
+      <label>Base URL (optional) <input id="api-base" placeholder="only for a custom endpoint, e.g. https://integrate.api.nvidia.com/v1"></label>
+    </div>
+    <div class="drawer-foot">
+      <button class="btn" onclick="testModel()">Test connection</button>
+      <button class="primary" onclick="saveModel()">Use this model</button>
+    </div>
+    <div id="model-test" class="small"></div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

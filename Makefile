@@ -1,6 +1,7 @@
 # Pramana - standard evaluation interface
 #   make setup   install dependencies into ./.venv
-#   make run     launch the harness (interactive; or: make run REPO=<path|url> ISSUE=<url|file|text> TEST="<cmd>")
+#   make run     open Pramana Studio, the app (headless: app served + terminal session; scripted: make run REPO=<path|url> ISSUE=<url|file|text>)
+#   make tui     the terminal version
 #   make test    unit tests + (if AI_API_KEY is set) a quick end-to-end run on 2 bundled tasks with hidden tests
 #   make bench   the full bundled benchmark (4 tasks, Python + JavaScript, bug fixes + a feature)
 #   make clean   remove generated artefacts
@@ -11,7 +12,7 @@ VENV    := .venv
 BIN     := $(VENV)/bin
 PRAMANA := $(BIN)/pramana
 
-.PHONY: setup run test clean doctor bench help
+.PHONY: tui setup run test clean doctor bench help
 
 help:
 	@sed -n '2,7p' Makefile
@@ -20,6 +21,14 @@ setup:
 	@bash scripts/setup.sh
 
 run:
+	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
+	@if [ -n "$(REPO)$(ISSUE)" ]; then \
+		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) run $(if $(REPO),--repo "$(REPO)") $(if $(ISSUE),--issue "$(ISSUE)") $(if $(TEST),--test "$(TEST)"); \
+	else \
+		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) ui; \
+	fi
+
+tui:
 	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
 	@AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) run $(if $(REPO),--repo "$(REPO)") $(if $(ISSUE),--issue "$(ISSUE)") $(if $(TEST),--test "$(TEST)")
 

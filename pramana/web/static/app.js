@@ -1,0 +1,340 @@
+const PRETTY = { nvidia: "NVIDIA", openrouter: "OpenRouter", deepseek: "DeepSeek", openai: "OpenAI", anthropic: "Anthropic",
+                 gemini: "Gemini", groq: "Groq", dashscope: "Qwen (DashScope)", moonshot: "Moonshot", "openai-compatible": "your endpoint" };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n || 0));
+const fmtTime = (s) => (s < 60 ? Math.round(s) + "s" : Math.floor(s / 60) + "m " + String(Math.round(s % 60)).padStart(2, "0") + "s");
+const api = async (path, body) => {
+  const r = await fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+
+/* ---------------- theme ---------------- */
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("pramana-theme", t); } catch (e) {}
+}
+try { const t = localStorage.getItem("pramana-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+/* ---------------- views ---------------- */
+function go(view, id) {
+  $("#home").hidden = view !== "home";
+  $("#run").hidden = view !== "run";
+  if (view === "home") { history.replaceState(null, "", "/"); stopStream(); loadRecent(); $("#prompt").focus(); }
+  if (view === "run") { history.replaceState(null, "", "#run=" + id); openRun(id); }
+}
+
+/* ---------------- model pill + settings ---------------- */
+let modelInfo = null, mode = "env";
+async function loadModel() {
+  try {
+    modelInfo = await api("/api/model");
+    const pill = $("#model-pill");
+    pill.classList.toggle("ok", !!modelInfo.ok);
+    pill.classList.toggle("bad", !modelInfo.ok);
+    const host = (modelInfo.base_url || "").replace(/^https?:\/\//, "").split("/")[0];
+    const who = PRETTY[modelInfo.provider] || modelInfo.provider;
+    $("#model-text").textContent = modelInfo.ok ? `${who} API · ${modelInfo.model}` : "No API key — click to set one";
+    $("#model-pill").title = modelInfo.ok ? `endpoint: ${modelInfo.base_url}\nmodel: ${modelInfo.model}\nkey: ${modelInfo.key_source}` : "";
+    const line = $("#api-line");
+    if (line) line.innerHTML = modelInfo.ok ? `Using the <b>${esc(who)}</b> API (${esc(host || "local")}) · model <b>${esc(modelInfo.model)}</b> · key from <b>${esc(modelInfo.key_source)}</b>` : "";
+  } catch (e) { $("#model-text").textContent = "model: unknown"; }
+}
+function openSettings() {
+  $("#drawer").hidden = false;
+  setMode(modelInfo && modelInfo.provider === "claude-cli" ? "claude" : "env");
+  $("#model-test").textContent = modelInfo ? `Now: ${modelInfo.model} via ${modelInfo.provider} (key: ${modelInfo.key_source})` : "";
+}
+function closeSettings() { $("#drawer").hidden = true; }
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll("#mode-seg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+  $("#mode-claude").hidden = m !== "claude";
+  $("#mode-api").hidden = m !== "api";
+}
+function modelBody() {
+  if (mode === "claude") return { mode: "claude", model: $("#claude-model").value };
+  if (mode === "api") return { mode: "api", key: $("#api-key").value.trim(), model: $("#api-model").value.trim(), base_url: $("#api-base").value.trim() };
+  return { mode: "env" };
+}
+async function saveModel() {
+  await api("/api/model", modelBody());
+  await loadModel(); loadModelPicker();
+  $("#model-test").textContent = modelInfo.ok ? `✓ Using ${modelInfo.model} via ${modelInfo.provider}` : "Not configured yet.";
+  if (modelInfo.ok) setTimeout(closeSettings, 700);
+}
+async function testModel() {
+  $("#model-test").textContent = "Testing…";
+  await api("/api/model", modelBody());
+  const r = await api("/api/model/test", {});
+  await loadModel();
+  $("#model-test").innerHTML = r.ok ? `<span style="color:var(--ok)">✓ Connected in ${r.seconds}s</span>` : `<span style="color:var(--bad)">✗ ${esc(r.error)}</span>`;
+}
+$("#drawer").addEventListener("click", (e) => { if (e.target.id === "drawer") closeSettings(); });
+
+/* ---------------- model picker (composer) ---------------- */
+async function loadModelPicker() {
+  const sel = $("#model-select");
+  let env = { models: [] };
+  try { env = await api("/api/models"); } catch (e) {}
+  const cur = modelInfo || {};
+  let html = "";
+  if (env.models && env.models.length) {
+    html += `<optgroup label="${esc(PRETTY[env.provider] || env.provider)} — your key">` +
+      env.models.map((m) => `<option value="env:${esc(m.id)}">${m.recommended ? "★ " : ""}${esc(m.id)}</option>`).join("") + "</optgroup>";
+  }
+  if (!html) html = `<option value="">No API key — set AI_API_KEY or click the model button</option>`;
+  sel.innerHTML = html;
+  const want = `env:${cur.model}`;
+  if ([...sel.options].some((o) => o.value === want)) sel.value = want;
+  else if (cur.model) { const o = new Option(`${cur.model} (${cur.provider})`, want); sel.add(o, 0); sel.value = want; }
+}
+async function pickModel(v) {
+  if (!v) { openSettings(); return; }
+  const id = v.slice(v.indexOf(":") + 1);
+  await api("/api/model", { mode: "env", model: id });
+  await loadModel();
+  $("#understood").innerHTML = `Model set to <b>${esc(id)}</b> — checking it answers…`;
+  const r = await api("/api/model/test", {});
+  $("#understood").innerHTML = r.ok ? `✓ <b>${esc(id)}</b> answered in ${r.seconds}s` : `<span style="color:var(--bad)">✗ ${esc(id)} did not answer: ${esc(String(r.error).slice(0, 140))}</span>`;
+}
+
+/* ---------------- composer ---------------- */
+const ISSUE_RE = /github\.com\/([\w.-]+)\/([\w.-]+)\/(issues|pull)\/(\d+)/;
+const REPO_RE = /github\.com[/:]([\w.-]+)\/([\w.-]+?)(\.git)?(?=[/\s#?]|$)/;
+function understood() {
+  const p = $("#prompt").value, r = $("#repo").value.trim();
+  let repo = r, how = "";
+  if (!repo) {
+    const m = p.match(ISSUE_RE) || p.match(REPO_RE);
+    if (m) { repo = `${m[1]}/${m[2]}`; how = " (from your link)"; }
+  }
+  const issue = p.match(ISSUE_RE);
+  let html = "";
+  if (repo) html += `Repository: <b>${esc(repo)}</b>${how}`;
+  if (issue) html += `${html ? " · " : ""}Issue <b>#${issue[4]}</b> will be read from GitHub`;
+  $("#understood").innerHTML = html || "Plain words are fine — no issue link needed.";
+}
+$("#prompt").addEventListener("input", understood);
+$("#repo").addEventListener("input", understood);
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !$("#home").hidden) startRun();
+  if (e.key === "Escape") closeSettings();
+});
+async function startRun() {
+  $("#form-error").textContent = "";
+  const btn = $("#go-btn");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value });
+    go("run", r.id);
+  } catch (e) {
+    $("#form-error").textContent = e.message;
+  } finally { btn.disabled = false; }
+}
+async function loadDemos() {
+  try {
+    const demos = await api("/api/demos");
+    $("#demo-chips").innerHTML = demos.map((d) => `<button class="chipbtn" onclick="startDemo('${esc(d.id)}')">${esc(d.id)}<span class="lang">${esc(d.language)}</span></button>`).join(" ");
+    if (!demos.length) $(".demos").hidden = true;
+  } catch (e) { $(".demos").hidden = true; }
+}
+async function startDemo(id) {
+  try { const r = await api("/api/demo", { id }); go("run", r.id); } catch (e) { $("#form-error").textContent = e.message; }
+}
+async function loadRecent() {
+  try {
+    const runs = await api("/api/runs");
+    $("#recent-wrap").hidden = !runs.length;
+    $("#recent").innerHTML = runs.map((r) => {
+      const st = pillOf(r.verdict || r.status);
+      return `<div class="card recent-item" onclick="go('run','${r.id}')"><div><b>${esc(r.title)}</b><div class="muted small">${esc(r.repo)}</div></div>
+        <span class="status-pill ${st.cls}">${st.label}</span></div>`;
+    }).join("");
+  } catch (e) {}
+}
+
+/* ---------------- run view ---------------- */
+const STEPS = [["setup", "Setup"], ["intake", "Understand"], ["localize", "Locate"], ["reproduce", "Reproduce"], ["fix", "Fix"], ["verify", "Prove"], ["review", "Review"], ["done", "Done"]];
+const ICON = { bash: "⌨", str_replace_editor: "✎", search: "⌕", find_definition: "ƒ", find_files: "▤", compare: "⇄", submit: "⚖" };
+let es = null, cur = null, timer = null;
+function stopStream() { if (es) { es.close(); es = null; } if (timer) { clearInterval(timer); timer = null; } }
+function pillOf(s) {
+  if (s === "verified") return { cls: "verified", label: "Verified fix" };
+  if (s === "patched") return { cls: "patched", label: "Patched · unproven" };
+  if (s === "no_patch" || s === "error") return { cls: "failed", label: s === "error" ? "Error" : "No fix" };
+  return { cls: "running", label: "Working" };
+}
+function setStatus(s, label) {
+  const p = pillOf(s);
+  const el = $("#run-status");
+  el.className = "status-pill " + p.cls;
+  el.innerHTML = (p.cls === "running" ? '<span class="spin"></span>' : "") + esc(label || p.label);
+}
+function stepTo(name) {
+  const idx = STEPS.findIndex((s) => s[0] === name);
+  if (idx < 0) return;
+  cur.step = Math.max(cur.step, idx);
+  document.querySelectorAll("#stepper li").forEach((li, i) => {
+    li.className = i < cur.step ? "done" : i === cur.step ? (name === "done" ? "done" : "active") : "";
+  });
+}
+function line(icon, html, cls = "", t) {
+  const feed = $("#feed");
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+  const div = document.createElement("div");
+  div.className = "ev-line " + cls;
+  div.innerHTML = `<span class="ic">${icon}</span><span class="tx">${html}</span><span class="t">${t != null ? fmtTime(t) : ""}</span>`;
+  feed.appendChild(div);
+  if (atBottom) feed.scrollTop = feed.scrollHeight;
+}
+function panel(id, html) { const el = $("#" + id); el.hidden = false; el.querySelector(".ev-body").innerHTML = html; }
+function checksHtml(checks) {
+  return (checks || []).map((c) => `<div class="check"><code>${esc((c.command || "").slice(0, 120))}</code><span class="badge ${esc(c.verdict)}">${esc((c.verdict || "").replace("_", " "))}</span></div>`).join("") || '<span class="muted">no checks</span>';
+}
+async function openRun(id) {
+  stopStream();
+  cur = { id, step: 0, calls: 0, tokens: 0, start: Date.now(), done: false };
+  $("#feed").innerHTML = ""; $("#verdict").hidden = true; $("#diff-card").hidden = true;
+  document.querySelectorAll(".ev").forEach((e) => (e.hidden = true));
+  $("#stepper").innerHTML = STEPS.map((s) => `<li>${s[1]}</li>`).join("");
+  ["#st-calls", "#st-tokens"].forEach((s) => ($(s).textContent = "0")); $("#st-steps").textContent = "–";
+  const info = await api("/api/runs/" + id);
+  $("#run-title").textContent = info.title;
+  $("#run-repo").textContent = info.repo;
+  $("#run-model").textContent = modelInfo ? `${PRETTY[modelInfo.provider] || modelInfo.provider} API · ${modelInfo.model}` : "";
+  cur.start = info.created * 1000;
+  setStatus("running", "Starting");
+  stepTo("setup");
+  timer = setInterval(() => { if (!cur.done) $("#st-time").textContent = fmtTime((Date.now() - cur.start) / 1000); }, 1000);
+  es = new EventSource(`/api/runs/${id}/events?since=0`);
+  es.onmessage = (m) => handle(JSON.parse(m.data));
+  es.onerror = () => { if (cur.done) stopStream(); };
+}
+function handle(e) {
+  const k = e.kind, t = e.t;
+  switch (k) {
+    case "stage":
+      if (e.name === "ready") { if (e.title) $("#run-title").textContent = e.title; line("✓", esc(e.message), "good"); }
+      else { setStatus("running", "Preparing"); line("⚙", esc(e.message), "note"); }
+      break;
+    case "run":
+      if (e.status === "start") { setStatus("running", "Working"); line("▶", `Run started · model ${esc(e.model)} via the ${esc(PRETTY[e.provider] || e.provider)} API`, "note", t); }
+      break;
+    case "phase": stepTo(e.name); break;
+    case "intake":
+      panel("ev-project", `<b>${esc(e.language)}</b> · ${e.files} files<br><span class="muted">tests:</span> <code>${esc(e.test_command || "not found")}</code>` +
+        ((e.notes || []).length ? `<ul>${e.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""));
+      line("◎", `Read the project: ${esc(e.language)}, ${e.files} files`, "", t);
+      break;
+    case "snippet":
+      line("▷", `Ran the code from your description on the original code → exit ${e.exit_code}: <code>${esc((e.last_line || "").slice(0, 120))}</code>`, e.exit_code ? "bad" : "", t);
+      break;
+    case "localized":
+      panel("ev-where", `<ul>${(e.top || []).slice(0, 6).map((f) => `<li><code>${esc(f)}</code></li>`).join("")}</ul>`);
+      line("⌖", `Located likely files in ${e.seconds}s: ${(e.top || []).slice(0, 3).map(esc).join(", ")}`, "", t);
+      break;
+    case "criteria":
+      panel("ev-criteria", `<pre>${esc(e.text || "")}</pre>`);
+      line("☑", "Predicted what a maintainer would test", "", t);
+      break;
+    case "attempt":
+      if (e.status === "start" && e.attempt > 1) line("↻", `Attempt ${e.attempt}: fresh start with lessons from attempt ${e.attempt - 1}`, "note big", t);
+      if (e.status === "end") line("■", `Attempt ${e.attempt} ended: ${esc(e.stop_reason)} · evidence ${esc(e.strength)} · ${e.steps} steps`, "big", t);
+      break;
+    case "step":
+      $("#st-steps").textContent = `${e.step}${e.max_steps ? " / " + e.max_steps : ""}`;
+      if (cur.step < 4 && e.step > 1) stepTo("fix");
+      break;
+    case "llm":
+      cur.calls += 1; cur.tokens = e.total_tokens || cur.tokens;
+      $("#st-calls").textContent = cur.calls; $("#st-tokens").textContent = fmtTok(cur.tokens);
+      {
+        const thought = String(e.text || "").replace(/<(tool|invoke|function_calls|tool_call)\b[\s\S]*?(<\/\1>|$)/g, "").replace(/<\/?[a-z_]+[^>]*>/gi, "").trim();
+        if (thought) line("💭", esc(thought.slice(0, 260)) + (thought.length > 260 ? "…" : ""), "thought", t);
+      }
+      break;
+    case "tool_call":
+      line(ICON[e.name] || "•", `<span class="tool">${esc(e.name)}</span>${esc(String(e.brief || "").slice(0, 160))}`, "", t);
+      break;
+    case "tool_result": {
+      const out = String(e.output || "");
+      if (e.is_error) line("↳", esc(out.trim().split("\n")[0].slice(0, 180) || "error"), "bad");
+      else if (e.name === "compare") { const v = out.split("\n").find((l) => l.startsWith("=>")); if (v) line("↳", esc(v.slice(3, 200)), "note"); }
+      else if (e.name === "str_replace_editor" && e.meta && e.meta.edited) line("↳", esc(out.split("\n")[0].slice(0, 180)), "good");
+      break;
+    }
+    case "checkpoint":
+      if (e.strength === "strong") line("◆", `Harness checkpoint at step ${e.step}: the fix already carries proof — told the agent to submit`, "good", t);
+      break;
+    case "verify":
+      stepTo("verify");
+      panel("ev-proof", `<div class="muted small">Round ${e.round}: <b style="color:${e.accepted ? "var(--ok)" : "var(--bad)"}">${e.accepted ? "accepted" : "sent back to the agent"}</b> · evidence ${esc(e.strength)}</div>${checksHtml(e.checks)}`);
+      line("⚖", `Proof gate round ${e.round}: ${e.accepted ? "ACCEPTED" : "REJECTED"} (evidence ${esc(e.strength)})`, e.accepted ? "good big" : "bad big", t);
+      break;
+    case "independent_test":
+      if (e.status === "written") { panel("ev-indep", `Written in ${e.steps} steps without seeing the fix:<br><code>${esc(String(e.command || "").slice(0, 160))}</code>`); line("🧪", "A second agent wrote its own test without seeing the fix", "", t); }
+      if (e.status === "ran") { const el = $("#ev-indep .ev-body"); $("#ev-indep").hidden = false; el.innerHTML += `<div class="check"><span>original → patched</span><span class="badge ${esc(e.verdict)}">${esc(e.verdict)}</span></div>`; line("🧪", `Independent test on original vs patched: ${esc(e.verdict)}`, e.verdict === "fixes" ? "good" : "", t); }
+      if (e.status === "gave_up") line("🧪", "Independent test writer gave up (no test)", "thought", t);
+      break;
+    case "review":
+      stepTo("review");
+      panel("ev-review", `<b style="color:${e.verdict === "approve" ? "var(--ok)" : "var(--warn)"}">${esc(e.verdict)}</b>` + ((e.concerns || []).length ? `<ul>${e.concerns.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""));
+      line("🔍", `Reviewer: ${esc(e.verdict)}`, e.verdict === "approve" ? "good" : "note", t);
+      break;
+    case "nudge": line("⚑", esc(e.message || "").slice(0, 220), "note", t); break;
+    case "log": if (e.level !== "debug") line(e.level === "error" ? "✖" : e.level === "warn" ? "!" : "·", esc(e.message || "").slice(0, 240), e.level === "error" ? "bad" : e.level === "warn" ? "note" : "thought", t); break;
+    case "done": finish(); break;
+  }
+}
+async function finish() {
+  cur.done = true;
+  stopStream();
+  const info = await api("/api/runs/" + cur.id);
+  const r = info.result || {};
+  stepTo("done");
+  const p = pillOf(r.status);
+  setStatus(r.status, p.label);
+  const u = r.usage || {};
+  if (r.elapsed_s) $("#st-time").textContent = fmtTime(r.elapsed_s);
+  if (u.total_tokens) $("#st-tokens").textContent = fmtTok(u.total_tokens);
+  if (u.calls) $("#st-calls").textContent = u.calls;
+  const v = $("#verdict");
+  v.hidden = false;
+  v.className = "verdict " + p.cls;
+  const head = { verified: ["✓", "Verified fix", "The change was proven: checks that failed on the original code pass on the patched code, and nothing that passed before broke."],
+                 patched: ["!", "Patched, but not proven", "A change was made, but the harness could not prove it with a failing-then-passing check. Review it before using it."],
+                 no_patch: ["✕", "No fix produced", "The agent did not arrive at a change it could stand behind."],
+                 error: ["✕", "Something went wrong", ""] }[r.status] || ["•", r.status, ""];
+  v.innerHTML = `<div class="big">${head[0]}</div><div><h3>${head[1]}</h3><p class="detail">${esc(r.summary || head[2])}${r.error ? `<br><code>${esc(r.error)}</code>` : ""}</p>
+    <p class="detail small muted" style="margin-top:6px">${u.total_tokens ? fmtTok(u.total_tokens) + " tokens · " + (u.calls || 0) + " model calls · " : ""}${r.elapsed_s ? fmtTime(r.elapsed_s) : ""}${r.attempts ? " · " + r.attempts + " attempt(s)" : ""}</p></div>`;
+  if (r.checks && r.checks.length) panel("ev-proof", checksHtml(r.checks));
+  if (r.patch) {
+    $("#diff-card").hidden = false;
+    $("#diff").innerHTML = renderDiff(r.patch);
+    $("#dl-patch").href = `/api/runs/${cur.id}/patch`;
+    $("#open-report").href = `/api/runs/${cur.id}/report`;
+    cur.repoPath = r.repo;
+  }
+}
+function renderDiff(patch) {
+  const files = patch.split(/^diff --git /m).filter(Boolean);
+  return files.map((f) => {
+    const lines = f.split("\n");
+    const name = (lines[0].match(/ b\/(.+)$/) || [, lines[0]])[1];
+    const body = lines.slice(1).filter((l) => !/^(index |--- |\+\+\+ |new file mode|deleted file mode)/.test(l)).map((l) => {
+      const cls = l.startsWith("@@") ? "hunk" : l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "";
+      return `<div class="dl ${cls}">${esc(l) || " "}</div>`;
+    }).join("");
+    return `<div class="dfile"><div class="dfile-name">${esc(name)}</div><div class="dlines">${body}</div></div>`;
+  }).join("");
+}
+function copyPath() { if (cur && cur.repoPath) navigator.clipboard.writeText(cur.repoPath); }
+
+/* ---------------- boot ---------------- */
+loadModel().then(loadModelPicker); loadDemos(); understood();
+const m = location.hash.match(/run=([\w-]+)/);
+if (m) go("run", m[1]); else go("home");

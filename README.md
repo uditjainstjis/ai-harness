@@ -10,9 +10,14 @@ engineering.
 ```bash
 export AI_API_KEY="<key>"     # provider auto-detected from the key (OpenAI, Anthropic, Gemini, Groq, OpenRouter, ...)
 make setup                    # installs into ./.venv (uv if present, else venv + pip)
-make run                      # interactive: give it a repo + a GitHub issue (URL, owner/repo#N, file, or pasted text)
+make run                      # opens Pramana Studio (the app): say what's wrong in plain words + the repo; make tui = terminal version
 make test                     # offline unit tests + (with a key) the end-to-end benchmark with hidden tests
 ```
+
+**Pramana Studio** opens as its own window: one box takes plain words, a GitHub issue link or `owner/repo#N`; the repository can be a GitHub URL,
+`owner/name` or a local folder (a GitHub link in the text is enough). It shows live progress, the proof (original vs patched), the diff and
+the report, and says which API, endpoint and model it is using. On a machine without a display, `make run` serves the app and runs the
+terminal version in the same session.
 
 Non-interactive: `make run REPO=/path/or/git-url ISSUE=https://github.com/o/r/issues/123 TEST="pytest tests/test_x.py"`
 (the issue can also be piped on stdin).

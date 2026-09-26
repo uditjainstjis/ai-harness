@@ -32,7 +32,7 @@ PROVIDERS: Dict[str, Dict[str, str]] = {
     "together": {"kind": "openai", "base_url": "https://api.together.xyz/v1", "model": "openai/gpt-oss-120b"},
     "fireworks": {"kind": "openai", "base_url": "https://api.fireworks.ai/inference/v1", "model": "accounts/fireworks/models/gpt-oss-120b"},
     "cerebras": {"kind": "openai", "base_url": "https://api.cerebras.ai/v1", "model": "gpt-oss-120b"},
-    "nvidia": {"kind": "openai", "base_url": "https://integrate.api.nvidia.com/v1", "model": "openai/gpt-oss-120b"},
+    "nvidia": {"kind": "openai", "base_url": "https://integrate.api.nvidia.com/v1", "model": "nvidia/nemotron-3-ultra-550b-a55b"},
     "huggingface": {"kind": "openai", "base_url": "https://router.huggingface.co/v1", "model": "openai/gpt-oss-120b"},
     "moonshot": {"kind": "openai", "base_url": "https://api.moonshot.ai/v1", "model": "kimi-k2-0905-preview"},
     "ollama": {"kind": "openai", "base_url": "http://localhost:11434/v1", "model": "gpt-oss:120b-cloud"},
@@ -62,7 +62,9 @@ KEY_PREFIXES = [
 # Who else issues plain "sk-" keys, in probing order. DeepSeek's are "sk-" + 32 hex characters.
 SK_CANDIDATES = ["deepseek", "openai", "moonshot", "dashscope"]
 # When the model is not configured, prefer these ids (first match wins) from the provider's /models list.
-MODEL_PREFERENCE = {"deepseek": ["deepseek-flash", "deepseek-v4-pro", "deepseek-chat"],
+MODEL_PREFERENCE = {"nvidia": ["nemotron-3-ultra", "nemotron-3-super", "deepseek-v4", "kimi-k3", "glm-5.3", "gpt-oss", "qwen3"],
+                    "openrouter": ["deepseek-v4", "qwen3", "kimi", "glm", "gpt-oss"],
+                    "deepseek": ["deepseek-flash", "deepseek-v4-pro", "deepseek-chat"],
                     "dashscope": ["coder", "max", "plus"], "moonshot": ["kimi-k2"], "openai": []}
 
 FALLBACK_KEY_ENVS = {

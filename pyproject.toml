@@ -23,5 +23,8 @@ pramana = "pramana.cli:main"
 [tool.setuptools.packages.find]
 include = ["pramana*"]
 
+[tool.setuptools.package-data]
+pramana = ["web/static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -229,6 +229,25 @@ def cmd_run(args) -> int:
             return 0
 
 
+def cmd_ui(args) -> int:
+    """The desktop-style app. Without a display (a headless server) the app is still served for port
+    forwarding, and the terminal session runs in the foreground so nothing ever waits on a window."""
+    from .web.server import has_display, serve
+
+    overrides = _overrides(args)
+    if has_display():
+        serve(port=args.port, open_app=not args.no_open, overrides=overrides)
+        return 0
+    import threading
+
+    threading.Thread(target=serve, kwargs={"port": args.port, "open_app": False, "overrides": overrides}, daemon=True).start()
+    console.print("[dim]No display found: the app is served above for port forwarding; the terminal session follows.[/]")
+    if sys.stdin.isatty():
+        return cmd_run(args)
+    threading.Event().wait()
+    return 0
+
+
 def cmd_solve(args) -> int:
     cfg = load_config(_overrides(args))
     if not args.issue:
@@ -326,6 +345,10 @@ def main(argv=None) -> int:
     p_doc = sub.add_parser("doctor", help="check configuration and model connectivity")
     p_doc.add_argument("--model")
     p_doc.add_argument("--provider")
+    p_ui = sub.add_parser("ui", help="open Pramana Studio, the app (make run)")
+    common(p_ui)
+    p_ui.add_argument("--port", type=int, default=8765)
+    p_ui.add_argument("--no-open", action="store_true", dest="no_open", help="serve without opening a window")
     p_bench = sub.add_parser("bench", help="run the bundled benchmark")
     common(p_bench)
     p_bench.add_argument("--suite", default="mini")
@@ -333,7 +356,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if args.cmd is None:
         args = ap.parse_args(["run"] + (argv or sys.argv[1:]))
-    fn = {"run": cmd_run, "solve": cmd_solve, "doctor": cmd_doctor, "bench": cmd_bench}[args.cmd]
+    fn = {"run": cmd_run, "ui": cmd_ui, "solve": cmd_solve, "doctor": cmd_doctor, "bench": cmd_bench}[args.cmd]
     return fn(args)
 
 
