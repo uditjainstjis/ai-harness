@@ -113,7 +113,7 @@ class GitTracker:
     def _is_junk(self, path: str) -> bool:
         return path.startswith(SCRATCH_DIRNAME + "/") or any(j in path or path.endswith(j.rstrip("/")) for j in JUNK_PATTERNS)
 
-    def patch(self, include_new: bool = True, paths: Optional[List[str]] = None) -> str:
+    def patch(self, include_new: bool = True, paths: Optional[List[str]] = None, context: int = 3) -> str:
         env, idx = self._temp_index_env()
         try:
             self._git("read-tree", self.base, env=env)
@@ -125,7 +125,7 @@ class GitTracker:
                 drop += [f for f in staged if f and f not in drop and self._is_new(f)]
             for i in range(0, len(drop), 200):
                 self._git("rm", "-q", "--cached", "--ignore-unmatch", "--", *drop[i : i + 200], env=env)
-            args = ["diff", "--cached", "--binary", "--no-color", "--no-ext-diff", self.base]
+            args = ["diff", "--cached", "--binary", "--no-color", "--no-ext-diff", f"-U{max(0, int(context))}", self.base]
             if paths:
                 args += ["--", *paths]
             return self._git(*args, env=env)

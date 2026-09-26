@@ -112,7 +112,12 @@ class Orchestrator:
 
     def _reviewer(self, issue_text: str):
         def review(v: Verification) -> Optional[Dict[str, Any]]:
-            patch = v.patch if len(v.patch) < 14000 else v.patch[:14000] + "\n[... patch truncated ...]"
+            try:  # wide context: lets the reviewer see parallel code the patch left untouched
+                wide = self._git.patch(context=25) if getattr(self, "_git", None) else v.patch
+            except Exception:  # noqa: BLE001
+                wide = v.patch
+            patch = wide if 0 < len(wide) < 20000 else v.patch
+            patch = patch if len(patch) < 20000 else patch[:20000] + "\n[... patch truncated ...]"
             crit = getattr(self, "_criteria", "")
             prompt = prompts.REVIEW_PROMPT.format(issue=issue_text[:10000], patch=patch, evidence=render_checks(v.checks),
                                                   criteria=(f"<predicted_acceptance_criteria>\n{crit}\n</predicted_acceptance_criteria>\n" if crit else ""))
@@ -153,6 +158,7 @@ class Orchestrator:
             ev.emit("phase", name="intake")
             root = repo_path.resolve()
             git = GitTracker(root)
+            self._git = git
             scratch = root / SCRATCH_DIRNAME
             scratch.mkdir(exist_ok=True)
             info = inspect_repo(root)

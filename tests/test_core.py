@@ -317,3 +317,13 @@ def test_dry_verify_does_not_consume_a_gate_round(tmp_path):
     assert [c.verdict for c in v.checks] == ["fixes"]
     v2 = gate.verify("real", [cmd])
     assert v2.accepted and gate.rounds == 1
+
+
+def test_patch_context_width(tmp_path):
+    body = "".join(f"line{i} = {i}\n" for i in range(1, 60))
+    repo = make_repo(tmp_path, {"m.py": body})
+    git = GitTracker(repo)
+    (repo / "m.py").write_text(body.replace("line30 = 30", "line30 = 300"))
+    narrow, wide = git.patch(), git.patch(context=25)
+    assert narrow.count("\n") < wide.count("\n")
+    assert "line10 = 10" not in narrow and "line10 = 10" in wide

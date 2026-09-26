@@ -108,6 +108,7 @@ REVIEW_PROMPT = """You are reviewing a patch produced by an autonomous agent for
 </issue>
 
 <patch>
+The diff is shown with wide context, so you can see the code SURROUNDING each change.
 {patch}
 </patch>
 
@@ -120,6 +121,7 @@ Work through these steps before deciding:
 1. Write down (to yourself) the regression test the project's maintainers would add for this issue: 3-6 concrete assertions covering every case in the issue, the obvious sibling cases (related functions/classes/modes that share the code path), and behaviour that must stay unchanged.
 2. For each assertion, trace whether the patched code satisfies it.
 3. Check the fix is at the root cause the issue describes (not a workaround in a caller), and that it does not special-case only the example.
+4. Read the unchanged code shown around each change: is there a parallel construct that needed the same treatment and did not get it (a sibling setting, a second branch of the same if/else, another entry in the same table, the same pattern repeated for a related type)? Name it if so.
 
 Reply with one line of JSON and nothing else:
 {{"verdict": "approve" | "revise", "concerns": ["<specific, actionable problem, e.g. 'Min(x, 2) still prints as Min(2, x): the fix only covers Max'>", ...]}}
