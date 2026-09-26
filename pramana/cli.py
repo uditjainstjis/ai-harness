@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
@@ -119,8 +120,8 @@ def solve_once(cfg: Config, repo_spec: str, issue_spec: str, acceptance: Optiona
         from .repo.bootstrap import bootstrap
 
         with console.status("[dim]preparing the repository environment (dependencies, test runner)...[/]"):
-            for note in bootstrap(repo, log=lambda m: console.print(f"[dim]  {m}[/]")):
-                console.print(f"[dim]  env: {note}[/]")
+            for note in bootstrap(repo, log=lambda m: console.print(f"[dim]  {escape(m)}[/]")):
+                console.print(f"[dim]  env: {escape(note)}[/]")
     if issue is None:
         slug_hint = repo_slug_from_remote(repo)
         issue = parse_issue(issue_spec, default_slug=slug_hint)
@@ -142,7 +143,7 @@ def preflight(cfg: Config) -> bool:
             model = build_model(cfg)
             resp = model.chat([{"role": "user", "content": "Reply with the single word: ready"}], tools=None)
         except Exception as e:  # noqa: BLE001
-            console.print(f"[red]model check failed:[/] {str(e)[:400]}")
+            console.print(f"[red]model check failed:[/] {escape(str(e)[:400])}")
             console.print("[dim]Check AI_API_KEY (and AI_MODEL / AI_BASE_URL or pramana.toml if the provider is not auto-detected).[/]")
             return False
     console.print(f"[green]✓[/] model reachable in {resp.latency_s:.1f}s")
@@ -165,7 +166,7 @@ def cmd_run(args) -> int:
         except (SystemExit, KeyboardInterrupt):
             raise
         except Exception as e:  # noqa: BLE001 - never show a raw traceback to an operator
-            console.print(f"[red]error:[/] {type(e).__name__}: {str(e)[:500]}")
+            console.print(f"[red]error:[/] {type(e).__name__}: {escape(str(e)[:500])}")
             return 2
         return _exit_code(res)
     last_repo = args.repo or os.environ.get("REPO", "")
@@ -196,9 +197,9 @@ def cmd_run(args) -> int:
         except KeyboardInterrupt:
             console.print("\n[yellow]interrupted.[/]")
         except SystemExit as e:
-            console.print(f"[red]{e}[/]")
+            console.print(f"[red]{escape(str(e))}[/]")
         except Exception as e:  # noqa: BLE001
-            console.print(f"[red]error: {type(e).__name__}: {e}[/]")
+            console.print(f"[red]error: {type(e).__name__}: {escape(str(e))}[/]")
         try:
             again = console.input("\nSolve another issue? [y/N]: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
@@ -215,7 +216,7 @@ def cmd_solve(args) -> int:
     try:
         res = solve_once(cfg, args.repo or "", args.issue, args.test, plain=args.plain)
     except Exception as e:  # noqa: BLE001
-        console.print(f"[red]error:[/] {type(e).__name__}: {str(e)[:500]}")
+        console.print(f"[red]error:[/] {type(e).__name__}: {escape(str(e)[:500])}")
         return 2
     if args.json:
         print(json.dumps({"status": res.status, "run_dir": str(res.run_dir), "tokens": res.usage.total_tokens,
@@ -249,7 +250,7 @@ def cmd_doctor(args) -> int:
         console.print(f"tool calling: [{'green' if ok else 'yellow'}]{mode} mode {'works' if ok else 'did not produce a call'}[/]")
         return 0 if ok else 1
     except Exception as e:  # noqa: BLE001
-        console.print(f"[red]model check failed: {e}[/]")
+        console.print(f"[red]model check failed: {escape(str(e))}[/]")
         return 1
 
 
