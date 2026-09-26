@@ -371,3 +371,13 @@ def test_editor_preserves_crlf_and_bom(tmp_path):
     assert b"\n\n" not in raw.replace(b"\r\n", b"\n\n").replace(b"\n\n", b"\r\n")  # no stray bare LF
     ed.undo_edit("win.py")
     assert crlf.read_bytes() == b"\xef\xbb\xbfdef f():\r\n    return 1\r\n"
+
+
+def test_looks_like_repo():
+    from pramana.cli import looks_like_repo
+
+    assert looks_like_repo("https://github.com/psf/requests")
+    assert looks_like_repo("psf/requests") and looks_like_repo("/tmp") and looks_like_repo("~/")
+    assert not looks_like_repo("slugify produces ugly slugs for real-world titles")
+    assert not looks_like_repo("Bug: mean([]) raises\n\nIt should return 0.0")
+    assert not looks_like_repo("")

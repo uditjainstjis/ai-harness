@@ -47,6 +47,17 @@ def banner(cfg: Config) -> None:
     console.print(Panel(t, border_style=ACCENT))
 
 
+def looks_like_repo(spec: str) -> bool:
+    spec = spec.strip()
+    if not spec or "\n" in spec:
+        return False
+    if spec.startswith(("http://", "https://", "git@", "ssh://", "~", "/", "./", "../")):
+        return True
+    if re.fullmatch(r"[\w.-]+/[\w.-]+", spec):
+        return True
+    return Path(spec).expanduser().exists()
+
+
 def read_multiline(prompt: str) -> str:
     console.print(prompt)
     lines = []
@@ -183,7 +194,12 @@ def cmd_run(args) -> int:
             if re.search(r"github\.com/[\w.-]+/[\w.-]+/(issues|pull)/\d+", repo) or re.fullmatch(r"[\w.-]+/[\w.-]+#\d+", repo):
                 # an issue link typed at the repository prompt: use it as the issue, infer the repo
                 issue_spec, repo = repo, ""
-                console.print(f"[dim]  treating that as the issue; the repository will be taken from it.[/]")
+                console.print("[dim]  treating that as the issue; the repository will be taken from it.[/]")
+            elif repo and not looks_like_repo(repo):
+                # issue text pasted at the repository prompt: keep it and ask for the repository after
+                issue_spec, repo = repo, ""
+                console.print("[dim]  that looks like issue text, not a repository.[/]")
+                repo = console.input("[bold]Repository[/] (local path or git URL): ").strip()
             if not issue_spec:
                 issue_spec = read_multiline(
                     "[bold]Issue[/]: paste a GitHub issue URL, owner/repo#N, a file path, or the issue text. "
