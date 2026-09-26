@@ -26,7 +26,8 @@ PROVIDERS: Dict[str, Dict[str, str]] = {
     "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-oss-120b"},
     "groq": {"kind": "openai", "base_url": "https://api.groq.com/openai/v1", "model": "openai/gpt-oss-120b"},
     "xai": {"kind": "openai", "base_url": "https://api.x.ai/v1", "model": "grok-code-fast-1"},
-    "deepseek": {"kind": "openai", "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat"},
+    "deepseek": {"kind": "openai", "base_url": "https://api.deepseek.com", "model": "deepseek-flash"},
+    "dashscope": {"kind": "openai", "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "model": "qwen3-coder-plus"},
     "mistral": {"kind": "openai", "base_url": "https://api.mistral.ai/v1", "model": "devstral-medium-latest"},
     "together": {"kind": "openai", "base_url": "https://api.together.xyz/v1", "model": "openai/gpt-oss-120b"},
     "fireworks": {"kind": "openai", "base_url": "https://api.fireworks.ai/inference/v1", "model": "accounts/fireworks/models/gpt-oss-120b"},
@@ -52,8 +53,17 @@ KEY_PREFIXES = [
     ("hf_", "huggingface"),
     ("fw_", "fireworks"),
     ("tgp_", "together"),
-    ("sk-", "openai"),
+    ("sk-proj-", "openai"),
+    ("sk-svcacct-", "openai"),
+    ("sk-admin-", "openai"),
+    ("sk-", "sk-ambiguous"),  # OpenAI legacy, DeepSeek, Qwen (DashScope) and Moonshot keys all look like this
 ]
+
+# Who else issues plain "sk-" keys, in probing order. DeepSeek's are "sk-" + 32 hex characters.
+SK_CANDIDATES = ["deepseek", "openai", "moonshot", "dashscope"]
+# When the model is not configured, prefer these ids (first match wins) from the provider's /models list.
+MODEL_PREFERENCE = {"deepseek": ["deepseek-flash", "deepseek-v4-pro", "deepseek-chat"],
+                    "dashscope": ["coder", "max", "plus"], "moonshot": ["kimi-k2"], "openai": []}
 
 FALLBACK_KEY_ENVS = {
     "openai": "OPENAI_API_KEY",
@@ -72,6 +82,41 @@ def detect_provider(key: str) -> Optional[str]:
     for prefix, name in KEY_PREFIXES:
         if key.startswith(prefix):
             return name
+    return None
+
+
+def _list_models(base_url: str, key: str, timeout: float = 6.0) -> Optional[list]:
+    """GET {base}/models with the key; the model ids on HTTP 200, else None."""
+    import json as _json
+    import urllib.request
+    req = urllib.request.Request(base_url.rstrip("/") + "/models", headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = _json.loads(r.read() or b"{}")
+        return [m.get("id", "") for m in data.get("data", []) if isinstance(m, dict)]
+    except Exception:  # noqa: BLE001 - any failure just means "not this provider"
+        return None
+
+
+def probe_sk_key(key: str, lister=_list_models):
+    """A plain "sk-" key: ask each candidate provider which one accepts it. Returns (provider, model ids)."""
+    import re
+    order = list(SK_CANDIDATES)
+    if not re.fullmatch(r"sk-[0-9a-f]{32}", key):
+        order.remove("deepseek")
+        order.insert(1, "deepseek")
+    for name in order:
+        ids = lister(PROVIDERS[name]["base_url"], key)
+        if ids is not None:
+            return name, ids
+    return None, []
+
+
+def pick_model(provider: str, ids: list) -> Optional[str]:
+    for pref in MODEL_PREFERENCE.get(provider, []):
+        for mid in ids:
+            if mid == pref or pref in mid:
+                return mid
     return None
 
 
@@ -201,6 +246,14 @@ def resolve_provider(cfg: Config) -> None:
     prov = (cfg.model.provider or "auto").lower()
     if prov == "auto":
         detected = detect_provider(cfg.api_key) if cfg.api_key else None
+        if detected == "sk-ambiguous":
+            if cfg.model.base_url:  # an explicit endpoint decides
+                detected = None
+            else:
+                found, ids = probe_sk_key(cfg.api_key)
+                detected = found or "openai"
+                if found and not cfg.model.name:
+                    cfg.model.name = pick_model(found, ids) or ""
         if detected:
             prov = detected
         elif cfg.model.base_url:

@@ -381,3 +381,22 @@ def test_looks_like_repo():
     assert not looks_like_repo("slugify produces ugly slugs for real-world titles")
     assert not looks_like_repo("Bug: mean([]) raises\n\nIt should return 0.0")
     assert not looks_like_repo("")
+
+
+def test_plain_sk_key_is_probed_not_assumed_openai():
+    from pramana.config import PROVIDERS, detect_provider, pick_model, probe_sk_key
+
+    ds_key = "sk-" + "0123456789abcdef" * 2
+    assert detect_provider(ds_key) == "sk-ambiguous" and detect_provider("sk-proj-abc") == "openai"
+    seen = []
+
+    def lister(base, key):
+        seen.append(base)
+        return ["deepseek-flash", "deepseek-v4-pro"] if base == PROVIDERS["deepseek"]["base_url"] else None
+    prov, ids = probe_sk_key(ds_key, lister)
+    assert prov == "deepseek" and seen[0] == PROVIDERS["deepseek"]["base_url"]  # 32-hex keys try DeepSeek first
+    assert pick_model(prov, ids) == "deepseek-flash"
+    qwen = lambda base, key: ["qwen3.8-flash", "qwen3-coder-plus"] if "dashscope" in base else None  # noqa: E731
+    prov, ids = probe_sk_key("sk-" + "x" * 40, qwen)
+    assert prov == "dashscope" and pick_model(prov, ids) == "qwen3-coder-plus"
+    assert probe_sk_key("sk-" + "x" * 40, lambda b, k: None) == (None, [])  # nobody answers: caller falls back to openai
