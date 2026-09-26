@@ -15,7 +15,7 @@ from pramana.llm.textproto import parse_text_tool_calls, to_text_messages
 from pramana.repo.git import GitTracker
 from pramana.repo.localize import Localizer
 from pramana.repo.symbols import SymbolIndex
-from pramana.tools import TOOL_SPECS, Toolbox, canonicalize
+from pramana.tools import TOOL_SPECS, ToolResult, Toolbox, canonicalize
 from pramana.tools.editor import EditError, Editor
 from pramana.tools.shell import build_env, check_denylist, run_command
 
@@ -327,3 +327,24 @@ def test_patch_context_width(tmp_path):
     narrow, wide = git.patch(), git.patch(context=25)
     assert narrow.count("\n") < wide.count("\n")
     assert "line10 = 10" not in narrow and "line10 = 10" in wide
+
+
+def test_inline_script_nudge(tmp_path):
+    from pramana.agent.events import Events
+    from pramana.agent.loop import Attempt
+    from pramana.agent.verify import Gate
+
+    repo = make_repo(tmp_path, {"m.py": "x = 1\n"})
+    git = GitTracker(repo)
+    tb = Toolbox(repo, repo / ".pramana", SymbolIndex(repo, ["m.py"]), git=git)
+    gate = Gate(repo, git, ["m.py"], "", "unknown", tb.env, timeout_s=30)
+    a = Attempt(1, None, tb, gate, Events(), "sys", "user", 45, lambda: 10**9)
+    for i in range(5):
+        a._track(ToolCall(str(i), "bash", {"command": "python - <<'PY'\nprint(1)\nPY"}), ToolResult("ok"))
+    a._step = 6
+    notes = a._guards()
+    assert any("reproduction file" in n for n in notes)
+    (repo / ".pramana").mkdir(exist_ok=True)
+    tb.execute(ToolCall("c", "str_replace_editor", {"command": "create", "path": ".pramana/repro.py", "file_text": "assert False\n"}))
+    a._nudged.clear()
+    assert not any("reproduction file" in n for n in a._guards())

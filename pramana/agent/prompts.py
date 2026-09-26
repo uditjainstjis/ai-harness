@@ -94,6 +94,14 @@ EDIT_FAIL_NUDGE = (
     "unique old_str (2-5 lines)."
 )
 
+INLINE_SCRIPT_NUDGE = (
+    "You have run {n} one-off inline scripts (python -c / heredocs) and have not written a reproduction file. "
+    "Throwaway commands cannot be used as proof, because the harness has to re-run your check on the ORIGINAL code "
+    "and on your patched code. Write ONE file now - `str_replace_editor create .pramana/repro.py` - that asserts "
+    "the behaviour the issue expects (assert, so it exits non-zero while the bug is present), run it with "
+    "`python .pramana/repro.py`, and keep extending that same file instead of writing new inline scripts."
+)
+
 NO_EDIT_NUDGE = (
     "You have used {used} of {total} steps without changing any source file. Commit to the most likely fix "
     "location now, make the edit, and verify it."

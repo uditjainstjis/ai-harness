@@ -97,6 +97,7 @@ class Attempt:
         self._nudged: set = set()
         self._edit_fail: Counter = Counter()
         self._edits = 0
+        self._inline_scripts = 0
         self._checkpoints = 0
         self._last_checkpoint_step = 0
         self._accepted = False
@@ -194,6 +195,10 @@ class Attempt:
         self.result.tool_counts[call.name] = self.result.tool_counts.get(call.name, 0) + 1
         if call.name != "submit":
             self._history.append(_call_key(call) + ("#ERR" if res.is_error else ""))
+        if call.name == "bash":
+            cmd = str((call.arguments or {}).get("command", ""))
+            if re.search(r"<<\s*['\"]?\w+|python3?\s+-c\b", cmd) and ".pramana/" not in cmd:
+                self._inline_scripts += 1
         if call.name == "str_replace_editor" and (call.arguments or {}).get("command") in ("str_replace", "insert", "create"):
             path = str((call.arguments or {}).get("path", ""))
             if res.is_error:
@@ -214,6 +219,12 @@ class Attempt:
             if n >= 3 and tag not in self._nudged:
                 self._nudged.add(tag)
                 notes.append(prompts.EDIT_FAIL_NUDGE.format(n=n, path=path or "(no path given - always pass path)"))
+        has_scratch_file = any(p.startswith(".pramana/") for p in self.toolbox.editor.created)
+        for threshold in (4, 10):
+            tag = f"inline{threshold}"
+            if self._inline_scripts >= threshold and not has_scratch_file and tag not in self._nudged:
+                self._nudged.add(tag)
+                notes.append(prompts.INLINE_SCRIPT_NUDGE.format(n=self._inline_scripts))
         if self._edits == 0 and self._step >= max(8, int(self.max_steps * 0.5)) and "noedit" not in self._nudged:
             self._nudged.add("noedit")
             notes.append(prompts.NO_EDIT_NUDGE.format(used=self._step, total=self.max_steps))
