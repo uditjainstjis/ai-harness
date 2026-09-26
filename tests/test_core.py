@@ -304,3 +304,16 @@ def test_gate_rejects_dependency_stub(tmp_path):
     (repo / "freezegun.py").write_text("def freeze_time(*a, **k):\n    pass\n")
     v = gate.verify("fix f, stub freezegun", ["python3 -c 'from pkg.core import f; assert f() == 2'"])
     assert not v.accepted and "third-party dependency" in v.feedback and v.shadow_stubs == ["freezegun.py"]
+
+
+def test_dry_verify_does_not_consume_a_gate_round(tmp_path):
+    repo = make_repo(tmp_path, {"calc.py": "def add(a, b):\n    return a - b\n"})
+    git = GitTracker(repo)
+    gate = Gate(repo, git, ["calc.py"], "", "unknown", build_env(repo), timeout_s=60)
+    (repo / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    cmd = "python3 -c 'import calc; assert calc.add(2, 2) == 4'"
+    v = gate.verify("checkpoint", [cmd], dry=True)
+    assert v.strength == "strong" and gate.rounds == 0 and not gate.history
+    assert [c.verdict for c in v.checks] == ["fixes"]
+    v2 = gate.verify("real", [cmd])
+    assert v2.accepted and gate.rounds == 1

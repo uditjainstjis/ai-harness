@@ -220,8 +220,10 @@ class Gate:
                     except OSError:
                         pass
 
-    def verify(self, summary: str, commands: List[str], final: bool = False) -> Verification:
-        self.rounds += 1
+    def verify(self, summary: str, commands: List[str], final: bool = False, dry: bool = False) -> Verification:
+        """dry=True: compute the evidence without spending a gate round or changing gate state."""
+        if not dry:
+            self.rounds += 1
         last_round = final or self.rounds >= self.max_rounds
         patch = self.git.patch()
         changed = self.git.changed_files()
@@ -229,7 +231,8 @@ class Gate:
         if not patch.strip():
             v.feedback = ("REJECTED: the repository has no changes. Make the source edit that fixes the issue, "
                           "verify it, then submit again.")
-            self.history.append(v)
+            if not dry:
+                self.history.append(v)
             return v
         for status, path in changed:
             if status == "D":
@@ -296,7 +299,7 @@ class Gate:
 
         added_paths = [p for s, p in changed if s == "A"]
         shadows = shadowed_dependencies(self.root, added_paths, self.files)
-        if shadows and not self.warned_shadow and not last_round:
+        if shadows and not self.warned_shadow and not last_round and not dry:
             self.warned_shadow = True
             problems.append(
                 "Your patch adds a stand-in for a third-party dependency: "
@@ -307,7 +310,7 @@ class Gate:
             )
         v.shadow_stubs = [p for p, _ in shadows]
         edited_tests = [p for s, p in changed if s == "M" and is_test_path(p)]
-        if edited_tests and not self.warned_tests and not last_round:
+        if edited_tests and not self.warned_tests and not last_round and not dry:
             self.warned_tests = True
             problems.append(
                 "Your patch modifies existing test files: " + ", ".join(edited_tests[:5]) + ". Tests encode the "
@@ -316,6 +319,9 @@ class Gate:
                 "asks for a test change, and fix the source code instead."
             )
         table = render_checks(checks)
+        if dry:
+            v.feedback = table
+            return v
         if problems and not last_round:
             v.feedback += "REJECTED - the evidence does not support the fix yet.\n\n" + table + "\n\n" + "\n\n".join(problems) + \
                 "\n\nFix these problems, then call submit again."

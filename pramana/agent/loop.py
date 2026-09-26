@@ -97,6 +97,8 @@ class Attempt:
         self._nudged: set = set()
         self._edit_fail: Counter = Counter()
         self._edits = 0
+        self._checkpoints = 0
+        self._last_checkpoint_step = 0
         self._accepted = False
         self._reviewed = False
         self._last_prompt_tokens = 0
@@ -242,6 +244,31 @@ class Attempt:
                                 "content and its line numbers are stale. View the file again if you need it.]")
                 m["_elided"] = True
 
+    def _checkpoint(self, step: int) -> Optional[str]:
+        """Costs no model tokens: once the agent has edited source and run something successfully, check
+        whether its change ALREADY has proof, and if so tell it to stop exploring and submit."""
+        if (self._edits == 0 or self._accepted or self._checkpoints >= 2 or step < 8
+                or step - self._last_checkpoint_step < 6 or step > self.max_steps - 3):
+            return None
+        cmds = self._guess_verification_cmds()
+        if not cmds:
+            return None
+        self._checkpoints += 1
+        self._last_checkpoint_step = step
+        self.events.emit("phase", name="verify", attempt=self.n)
+        v = self.gate.verify("(harness checkpoint)", cmds, dry=True)
+        self.events.emit("checkpoint", attempt=self.n, step=step, strength=v.strength,
+                         checks=[{"command": c.command, "verdict": c.verdict, "origin": c.origin} for c in v.checks])
+        if v.strength != "strong":
+            return None
+        return (
+            "HARNESS CHECKPOINT (no action needed if you disagree). Your current change already carries proof: the "
+            "harness ran your commands on the original code and on your patched code.\n\n" + v.feedback +
+            "\n\nIf the issue is fully addressed, call `submit` NOW with these verification_commands instead of "
+            "exploring further:\n" + "\n".join(f"- {c}" for c in cmds) +
+            "\nIf something in the issue is still unhandled, say what, fix it, and then submit."
+        )
+
     def _maybe_compact(self, messages: List[Dict[str, Any]]) -> None:
         size = self._last_prompt_tokens or estimate_tokens(messages)
         if size > self.compact_at:
@@ -348,6 +375,9 @@ class Attempt:
                 break
             if ignored_note:  # after the tool results: tool messages must directly follow their call
                 messages.append({"role": "user", "content": ignored_note, "_nudge": True})
+            note = self._checkpoint(step)
+            if note:
+                messages.append({"role": "user", "content": note, "_nudge": True})
             for note in self._guards():
                 messages.append({"role": "user", "content": note, "_nudge": True})
                 self.events.emit("nudge", attempt=self.n, message=note)

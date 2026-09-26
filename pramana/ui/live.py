@@ -68,6 +68,11 @@ class LiveView:
             line = Text(f"intake: {d.get('language')} · {d.get('files')} files · tests: {d.get('test_command') or '?'}", style="cyan")
             for n in d.get("notes") or []:
                 self._push(Text(f"  note: {n}", style="yellow"))
+        elif kind == "checkpoint":
+            n_fix = sum(1 for c in (d.get("checks") or []) if c.get("verdict") == "fixes")
+            line = Text(f"  ◆ harness checkpoint at step {d.get('step')}: evidence {d.get('strength')}"
+                        + (f" ({n_fix} proving check) - nudged to submit" if d.get("strength") == "strong" else ""),
+                        style="green" if d.get("strength") == "strong" else "dim")
         elif kind == "independent_test":
             st = d.get("status")
             if st == "written":
