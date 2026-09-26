@@ -179,6 +179,35 @@ def _infer_from_args(args: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+RANGE_START_KEYS = ("line_start", "start_line", "start", "from_line", "line_from", "begin", "first_line", "lineno", "line")
+RANGE_END_KEYS = ("line_end", "end_line", "end", "to_line", "line_to", "last_line", "stop")
+
+
+def _extract_range(args: Dict[str, Any]) -> Optional[List[int]]:
+    """Pull a line range out of whatever spelling the model used, removing the consumed keys."""
+    def as_int(v):
+        try:
+            return int(str(v).strip())
+        except (TypeError, ValueError):
+            return None
+    for key in ("lines", "line_range", "range"):
+        if key in args:
+            nums = [int(x) for x in re.findall(r"(?<!\d)-?\d+", str(args.pop(key)))]
+            if nums:
+                return nums[:2] if len(nums) > 1 else [nums[0], nums[0] + 100]
+    if "offset" in args or "limit" in args:  # Claude-Code style: offset (0/1-based) + limit
+        off = as_int(args.pop("offset", 1)) or 1
+        lim = as_int(args.pop("limit", 200)) or 200
+        return [max(1, off), max(1, off) + lim - 1]
+    start = next((as_int(args.pop(k)) for k in RANGE_START_KEYS if k in args), None)
+    end = next((as_int(args.pop(k)) for k in RANGE_END_KEYS if k in args), None)
+    if start is not None:
+        return [start, end if end is not None else start + 150]
+    if end is not None:
+        return [max(1, end - 150), end]
+    return None
+
+
 def canonicalize(call: ToolCall) -> Optional[ToolCall]:
     """Map alias tool names/argument spellings onto the declared schema, so the transcript only
     ever contains declared tools (some providers 500 on histories with undeclared tool names).
@@ -200,20 +229,10 @@ def canonicalize(call: ToolCall) -> Optional[ToolCall]:
         name = _infer_from_args(args) or ""
         if name not in TOOL_NAMES:
             return None
-    if name == "str_replace_editor" and sub and not args.get("command"):
-        args["command"] = sub
-    for alt in ("content", "text"):
-        if name == "str_replace_editor" and args.get("command") == "create" and alt in args and "file_text" not in args:
-            args["file_text"] = args.pop(alt)
-    if name == "str_replace_editor" and args.get("command") == "view" and "view_range" not in args and "start_line" in args:
-        try:
-            args["view_range"] = [int(args.pop("start_line")), int(args.pop("end_line", -1))]
-        except (TypeError, ValueError):
-            pass
     for alt in ("file_path", "file", "filename"):
         if alt in args and "path" not in args:
             args["path"] = args.pop(alt)
-    if name == "bash":
+    if name in ("bash", "compare"):
         for alt in ("cmd", "script", "code"):
             if alt in args and "command" not in args:
                 args["command"] = args.pop(alt)
@@ -221,27 +240,34 @@ def canonicalize(call: ToolCall) -> Optional[ToolCall]:
         for alt in ("query", "regex", "text"):
             if alt in args and "pattern" not in args:
                 args["pattern"] = args.pop(alt)
-    elif name == "str_replace_editor" and not args.get("command"):
-        if call.name in ("view", "read_file"):
+    elif name == "find_definition":
+        for alt in ("name", "query"):
+            if alt in args and "symbol" not in args:
+                args["symbol"] = args.pop(alt)
+    if name == "str_replace_editor" and sub and not args.get("command"):
+        args["command"] = sub
+    if name == "str_replace_editor" and not args.get("command"):
+        if raw_name in ("view", "read_file"):
             args["command"] = "view"
         elif args.get("old_str") is not None:
             args["command"] = "str_replace"
         elif args.get("file_text") is not None or args.get("content") is not None:
             args["command"] = "create"
-            if "content" in args and "file_text" not in args:
-                args["file_text"] = args.pop("content")
         elif args.get("insert_line") is not None:
             args["command"] = "insert"
         else:
             args["command"] = "view"
-    elif name == "compare":
-        for alt in ("cmd", "script"):
-            if alt in args and "command" not in args:
-                args["command"] = args.pop(alt)
-    elif name == "find_definition":
-        for alt in ("name", "query"):
-            if alt in args and "symbol" not in args:
-                args["symbol"] = args.pop(alt)
+    for alt in ("content", "text"):
+        if name == "str_replace_editor" and args.get("command") == "create" and alt in args and "file_text" not in args:
+            args["file_text"] = args.pop(alt)
+    if name == "str_replace_editor" and "view_range" not in args:
+        vr = _extract_range(args)
+        if vr:
+            args["view_range"] = vr
+    if name == "str_replace_editor" and isinstance(args.get("view_range"), str):
+        nums = [int(x) for x in re.findall(r"(?<!\d)-?\d+", args["view_range"])]
+        if nums:
+            args["view_range"] = nums[:2] if len(nums) > 1 else [nums[0], nums[0] + 100]
     return ToolCall(call.id, name, args, json.dumps(args))
 
 
@@ -268,6 +294,9 @@ class Toolbox:
         return TOOL_SPECS
 
     def execute(self, call: ToolCall) -> ToolResult:
+        canon = canonicalize(call)
+        if canon is not None:
+            call = canon
         name = ALIASES.get(call.name, call.name)
         args = call.arguments or {}
         if call.parse_error:
@@ -283,12 +312,20 @@ class Toolbox:
             args = {"command": "view", **args}
             if "file_path" in args and "path" not in args:
                 args["path"] = args.pop("file_path")
+        spec = next((t for t in TOOL_SPECS if t.name == name), None)
+        allowed = set((spec.parameters.get("properties") or {}).keys()) if spec else set()
+        tolerated = {"file_path", "cmd", "query", "content", "file", "text", "name"}
+        unknown = sorted(k for k in args if k not in allowed and k not in tolerated)
         try:
-            return getattr(self, f"_t_{name}")(args)
+            res = getattr(self, f"_t_{name}")(args)
         except EditError as e:
-            return ToolResult(str(e), is_error=True)
+            res = ToolResult(str(e), is_error=True)
         except Exception as e:  # noqa: BLE001 - a tool bug must never crash the run
-            return ToolResult(f"Tool `{name}` failed internally: {type(e).__name__}: {e}", is_error=True)
+            res = ToolResult(f"Tool `{name}` failed internally: {type(e).__name__}: {e}", is_error=True)
+        if unknown:  # never ignore an argument silently: the model would keep retrying it
+            res.output += (f"\n[harness note] Ignored unknown argument(s) for `{name}`: {', '.join(unknown)}. "
+                           f"Valid arguments: {', '.join(sorted(allowed))}.")
+        return res
 
     # ------------------------------------------------------------------ tools
     def _t_bash(self, a: Dict[str, Any]) -> ToolResult:

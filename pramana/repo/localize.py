@@ -107,6 +107,18 @@ def _match_path(ref: str, files: List[str], suffix_index: Dict[str, List[str]]) 
     return cands if len(cands) <= 3 else []
 
 
+VENDOR_RE = re.compile(r"(^|/)(vendor|vendored|third_party|thirdparty|node_modules|static|dist|build|_vendor)(/|$)|\.min\.(js|css)$", re.I)
+
+
+def specificity(name: str) -> float:
+    """Plain lowercase words ('default', 'choices', 'save') name dozens of things; snake_case/CamelCase don't."""
+    if "_" in name.strip("_") or re.search(r"[a-z][A-Z]", name) or re.match(r"[A-Z][a-z]+[A-Z]", name):
+        return 1.0
+    if name[:1].isupper():
+        return 0.8  # a single capitalised word, e.g. a class name like Session
+    return 0.25 if len(name) <= 12 else 0.6
+
+
 def is_test_path(p: str) -> bool:
     low = p.lower()
     return bool(re.search(r"(^|/)(tests?|testing|spec|__tests__)(/|$)", low) or re.search(r"(^|/)(test_[^/]*|[^/]*_test\.\w+|[^/]*\.(test|spec)\.\w+)$", low))
@@ -115,7 +127,7 @@ def is_test_path(p: str) -> bool:
 class Localizer:
     def __init__(self, root: Path, files: List[str], index: SymbolIndex) -> None:
         self.root = root
-        self.files = [f for f in files if Path(f).suffix in CODE_EXTS]
+        self.files = [f for f in files if Path(f).suffix in CODE_EXTS and not VENDOR_RE.search(f)]
         self.index = index
         self.suffix_index: Dict[str, List[str]] = defaultdict(list)
         for f in self.files:
@@ -192,13 +204,13 @@ class Localizer:
                     break
             leaf = parts[-1]
             for s in self.index.lookup(".".join(parts[-2:]) if len(parts) > 1 else leaf, limit=6):
-                if s.name == leaf:
-                    bump(s.path, 3.5, f"defines `{s.qualname}`", f"{s.qualname} (line {s.line})")
+                if s.name == leaf and not VENDOR_RE.search(s.path):
+                    bump(s.path, 3.5 * max(specificity(leaf), 0.5), f"defines `{s.qualname}`", f"{s.qualname} (line {s.line})")
         for name in strong:
-            defs = self.index.by_name.get(name, [])
+            defs = [d for d in self.index.by_name.get(name, []) if not VENDOR_RE.search(d.path)]
             if not defs or len(defs) > 25:
                 continue
-            w = 4.0 / math.sqrt(len(defs))
+            w = 4.0 * specificity(name) / math.sqrt(len(defs))
             for s in defs[:10]:
                 bump(s.path, w, f"defines `{s.qualname}`", f"{s.qualname} (line {s.line})")
 
@@ -210,10 +222,66 @@ class Localizer:
                 if rel in cands and not cands[rel].reasons:
                     cands[rel].reasons.append("text similarity")
 
+        # Second hop: the tests that best match the issue import the code they exercise.
+        ranked = sorted(cands.values(), key=lambda c: -c.score)
+        test_cands = [c for c in ranked if is_test_path(c.path)][:3]
+        if test_cands:
+            top_test = test_cands[0].score or 1.0
+            for tc in test_cands:
+                imported = [m for m in self._imported_sources(tc.path) if not is_test_path(m) and not m.endswith("__init__.py")]
+                test_dirs = {d for d in Path(tc.path).parent.parts if d not in ("tests", "test", "testing", "src")}
+                test_stem = Path(tc.path).stem.replace("test_", "").replace("_test", "")
+                for mod_file in imported:
+                    # a test's specific imports (not package roots) are strong evidence of what it exercises;
+                    # test layouts mirror the code (tests/migrations/test_writer.py <-> db/migrations/writer.py)
+                    affinity = 1.0
+                    mod_parts = set(Path(mod_file).parent.parts)
+                    if test_dirs & mod_parts:
+                        affinity += 0.6
+                    if Path(mod_file).stem == test_stem:
+                        affinity += 0.6
+                    bump(mod_file, (2.0 + 2.0 * tc.score / top_test) * affinity,
+                         f"imported by related test {tc.path.rsplit('/', 1)[-1]}")
+
         ranked = sorted(cands.values(), key=lambda c: -c.score)
         src = [c for c in ranked if not is_test_path(c.path)][:top_k]
         tests = [c for c in ranked if is_test_path(c.path)][:4]
         return src, tests
+
+    def _imported_sources(self, test_rel: str) -> List[str]:
+        """Repo source files imported by a test file (Python absolute imports, JS/TS relative imports)."""
+        p = self.root / test_rel
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")[:200_000]
+        except OSError:
+            return []
+        out: List[str] = []
+        fileset = set(self.files)
+        if test_rel.endswith(".py"):
+            mods = re.findall(r"^\s*from\s+([\w.]+)\s+import|^\s*import\s+([\w.]+)", text, re.M)
+            for a, b in mods:
+                mod = (a or b).strip(".")
+                if not mod or mod.startswith(("os", "sys", "re", "unittest", "pytest", "typing")):
+                    continue
+                parts = mod.split(".")
+                for cut in range(len(parts), 0, -1):
+                    base = "/".join(parts[:cut])
+                    for cand in (base + ".py", base + "/__init__.py", "src/" + base + ".py", "src/" + base + "/__init__.py"):
+                        if cand in fileset:
+                            out.append(cand)
+                            break
+                    else:
+                        continue
+                    break
+        else:
+            for spec in re.findall(r"""(?:require\(\s*|from\s+)['"](\.{1,2}/[^'"]+)['"]""", text):
+                base = str((Path(test_rel).parent / spec)).replace("\\", "/")
+                base = str(Path(base))  # normalise ../
+                for ext in ("", ".js", ".ts", ".mjs", ".cjs", ".jsx", ".tsx", "/index.js", "/index.ts"):
+                    if base + ext in fileset:
+                        out.append(base + ext)
+                        break
+        return list(dict.fromkeys(out))[:12]
 
     @staticmethod
     def render(src: List[Candidate], tests: List[Candidate]) -> str:

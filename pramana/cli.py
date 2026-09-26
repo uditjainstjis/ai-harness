@@ -99,8 +99,13 @@ def show_result(res: RunResult) -> None:
     console.print(Text(
         f"tokens {u.total_tokens:,} (in {u.input_tokens:,} · cached {u.cached_tokens:,} · out {u.output_tokens:,}) · "
         f"{u.calls} model calls · {res.elapsed_s:.0f}s · attempts {len(res.attempts)}", style="dim"))
+    if res.repo and res.patch.strip():
+        console.print(Text.assemble(("the fix is applied in ", "dim"), (str(res.repo.root), "bold"), ("  (git diff to inspect)", "dim")))
     if res.run_dir:
+        report = Path(res.run_dir) / "report.html"
         console.print(Text.assemble(("evidence bundle: ", "dim"), (str(res.run_dir), "bold"), ("  (report.md / report.html / patch.diff)", "dim")))
+        if report.exists():
+            console.print(Text.assemble(("open the report: ", "dim"), (report.resolve().as_uri(), f"link {report.resolve().as_uri()}")))
 
 
 def solve_once(cfg: Config, repo_spec: str, issue_spec: str, acceptance: Optional[str], plain: bool = False) -> RunResult:

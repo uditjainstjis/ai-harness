@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import warnings
 import re
 import shutil
 import subprocess
@@ -51,7 +52,9 @@ def _py_signature(node: ast.AST) -> str:
 
 def python_symbols(source: str, rel: str) -> List[Symbol]:
     try:
-        tree = ast.parse(source)
+        with warnings.catch_warnings():  # target code may have invalid escapes etc.; never spam the UI
+            warnings.simplefilter("ignore")
+            tree = ast.parse(source)
     except (SyntaxError, ValueError):
         return regex_symbols(source, rel)
     out: List[Symbol] = []

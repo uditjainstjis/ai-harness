@@ -263,3 +263,14 @@ def test_canonicalize_editor_subcommands_and_arg_inference():
     c = canonicalize(ToolCall("4", "open_file", {"path": "a.py", "start_line": 5, "end_line": 9}))
     assert c.arguments == {"path": "a.py", "command": "view", "view_range": [5, 9]}
     assert canonicalize(ToolCall("5", "weather", {"city": "Delhi"})) is None
+
+
+def test_view_range_spellings_and_unknown_arg_note(tmp_path):
+    repo = make_repo(tmp_path, {"big.py": "".join(f"x{i} = {i}\n" for i in range(1, 901))})
+    tb = Toolbox(repo, repo / ".pramana", SymbolIndex(repo, ["big.py"]))
+    for args in ({"line_start": 500, "line_end": 505}, {"start": 500, "end": 505}, {"offset": 500, "limit": 6},
+                 {"lines": "500-505"}, {"view_range": "500, 505"}):
+        r = tb.execute(ToolCall("v", "str_replace_editor", {"command": "view", "path": "big.py", **args}))
+        assert "lines 500-505" in r.output and "x500 = 500" in r.output, args
+    r = tb.execute(ToolCall("u", "search", {"pattern": "x77 =", "max_results": 3}))
+    assert "Ignored unknown argument(s) for `search`: max_results" in r.output

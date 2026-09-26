@@ -59,8 +59,12 @@ def _is_bare_expr(line: str) -> bool:
 
 
 def _compiles(code: str) -> bool:
+    import warnings
+
     try:
-        compile(code, "<snippet>", "exec")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            compile(code, "<snippet>", "exec")
         return True
     except (SyntaxError, ValueError):
         return False

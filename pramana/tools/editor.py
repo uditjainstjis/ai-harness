@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import warnings
 import os
 import re
 import shutil
@@ -86,7 +87,9 @@ def syntax_error(path: Path, content: str) -> Optional[str]:
     suf = path.suffix.lower()
     if suf in (".py", ".pyi"):
         try:
-            compile(content, str(path), "exec", dont_inherit=True)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                compile(content, str(path), "exec", dont_inherit=True)
         except SyntaxError as e:
             line = (e.text or "").rstrip("\n")
             caret = " " * max((e.offset or 1) - 1, 0) + "^"
