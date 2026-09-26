@@ -244,6 +244,13 @@ def canonicalize(call: ToolCall) -> Optional[ToolCall]:
         for alt in ("name", "query"):
             if alt in args and "symbol" not in args:
                 args["symbol"] = args.pop(alt)
+    if name == "str_replace_editor" and str(args.get("command", "")).lower() in ("search", "grep", "find", "find_in_file"):
+        # the editor has no search command: route to the search tool, keeping the path as its scope
+        pattern = args.get("pattern") or args.get("query") or args.get("search_term") or args.get("term") or args.get("old_str") or ""
+        new_args = {"pattern": pattern}
+        if args.get("path"):
+            new_args["path"] = args["path"]
+        return ToolCall(call.id, "search", new_args, json.dumps(new_args))
     if name == "str_replace_editor" and sub and not args.get("command"):
         args["command"] = sub
     if name == "str_replace_editor" and not args.get("command"):

@@ -22,70 +22,66 @@ Non-interactive: `make run REPO=/path/or/git-url ISSUE=https://github.com/o/r/is
 ## How it works
 
 ```
- issue ─┐
-        ▼
- ┌────────────┐   ┌─────────────────┐   ┌───────────────────────────────┐   ┌──────────────┐
- │  Intake    │──▶│  Localize       │──▶│  Agent loop (one context)      │──▶│  Submit gate  │──┐
- │ repo scan, │   │ traceback/path/ │   │ bash · str_replace_editor ·    │   │ re-runs every │  │
- │ lang+tests,│   │ symbol/BM25     │   │ search · find_definition ·     │   │ check on the  │  │
- │ env probe  │   │ ranking (0 tok) │   │ find_files · submit            │   │ ORIGINAL and  │  │
- └────────────┘   └─────────────────┘   │ guards: loops, edit failures,  │   │ PATCHED code  │  │
-                                        │ budget, context compaction     │◀──│ reject: regr./│  │
-                                        └───────────────────────────────┘   │ still failing │  │
-                                                     ▲                       └──────────────┘  │
-                                                     │ attempt 2 (fresh context + lessons)      │
-                                                     └──── only if attempt 1 ended without proof┘
-                                                                                                ▼
-                                        evidence bundle: report.md/html · patch.diff · evidence.json · trajectory
+ issue ──▶ Intake ──▶ Zero-token repro ──▶ Localize ──▶ Acceptance ──▶ Agent loop ──▶ Submit gate ──▶ Independent ──▶ Reviewer ──▶ Evidence
+          repo scan,  run the issue's      traceback,   criteria       (one context,  every check    test writer    predicts     bundle +
+          lang/tests, code snippets on     paths,       (maintainer's  7 tools, loop  run on the     (blind agent,  maintainer's  run index
+          env probe   the ORIGINAL code    symbols,     checklist,     & budget       ORIGINAL and   never sees     test, checks
+                      (traceback feeds     BM25, test   1 call)        guards)        PATCHED code   the patch)     the diff
+                      localization)        imports                                    │                             │
+                                                                                      └── rejected → back to agent ◀┘
+                                           attempt 2 (fresh context + lessons) only if attempt 1 ends without proof
 ```
 
-**1. Deterministic localization (zero model tokens).** Before the model sees anything, Pramana
-ranks likely-relevant files from traceback frames, quoted paths, identifiers resolved through a
-symbol index (Python `ast`, universal-ctags or regex fallback), and BM25 over the codebase. The
-model starts at the right place instead of spending turns exploring.
+### Five layers of evidence, every one of them executed
 
-**2. An agent-computer interface built for weak and strong models alike.**
-- `str_replace_editor` accepts near-misses safely: pasted line numbers, trailing whitespace and
-  different indentation schemes are tolerated, but only for a **unique** match. On a miss it
-  shows the most similar region with line numbers, so the model recovers in one step.
-- **Lint gate:** an edit that would make a file unparseable is rejected and rolled back with the
-  exact syntax error (Python, JSON, JS, TOML).
-- Commands run in their own process group with a timeout, closed stdin, head+tail truncation, the
-  target repo's virtualenv activated, and a denylist (sudo, `git push`, `rm -rf /`, ...). The model's
-  API key is scrubbed from every command's environment.
+| # | layer | what runs | what it proves |
+|---|---|---|---|
+| 1 | **issue snippet** | code blocks from the issue, run on the original code before the model's first turn | the bug is real here; the traceback seeds localization (0 model tokens) |
+| 2 | **agent reproduction** | the agent's script, run by the harness on original **and** patched code | fail → pass |
+| 3 | **related existing tests** | test files for every changed module, selected automatically (the agent cannot skip them) | pass → pass (no regression) |
+| 4 | **independent regression test** | written by a *second* agent that sees only the issue, never the patch | the fix satisfies the issue as a maintainer would test it, not just the agent's own reading |
+| 5 | **reviewer** | fresh-context review that first predicts the maintainers' regression test, then checks the diff against it | root cause, sibling cases, unchanged behaviour |
 
-**3. The submit gate turns claims into evidence.** When the agent submits, the harness runs its
-reproduction, its chosen tests and **automatically selected related tests** twice: once on the
-patched tree and once on the original tree (the patch is reverse-applied through a private
-temporary git index, so the user's index, HEAD and stash are never touched). Each check becomes:
+A check that passed on the original code but fails with the patch is a **regression** and the
+submission is returned with the failure output; a reproduction or independent test that still fails
+is returned the same way. Pre-existing failures (fail → fail in unrelated tests) are recognised and
+ignored, and the agent can ask the same question at any time with the `compare` tool.
 
-| verdict | original → patched | effect |
-|---|---|---|
-| **fixes** | fail → pass | proof of the fix |
-| no regression | pass → pass | fine, not proof |
-| **REGRESSION** | pass → fail | submission rejected with the failure output |
-| still failing | fail → fail | rejected if it is the agent's own reproduction or the acceptance test |
+### The agent-computer interface
 
-A submission with no fail→pass check is sent back once with "write a reproduction that fails on
-the original code". An independent reviewer pass (fresh context: issue + diff + evidence only)
-can return concrete defects once.
+- **`str_replace_editor`** accepts near-misses safely: pasted line numbers, trailing whitespace and
+  a different indentation scheme are tolerated (re-indented level by level), but only for a
+  **unique** match. On a miss it shows the most similar region with line numbers. **Lint gate:** an
+  edit that would make a Python/JSON/JS/TOML file unparseable is rejected with the exact error.
+  Editing back to an earlier version of a file is detected and called out (oscillation).
+- **`compare`** runs any command on the original and on the current code and says *fixed /
+  regression / pre-existing*: the antidote to agents that "fix" unrelated failing tests.
+- **`search`**, **`find_definition`**, **`find_files`**: ripgrep → `git grep` → Python fallbacks;
+  symbols via Python `ast`, universal-ctags or regex; results grouped and capped.
+- **`bash`**: own process group, timeout, closed stdin, head+tail truncation, the target repo's
+  virtualenv activated, a `python`→`python3` shim where needed, a denylist (sudo, `git push`,
+  `rm -rf /`, ...), and the model's API key scrubbed from the environment.
+- Argument tolerance: every common spelling of a line range (`view_range`, `line_start/line_end`,
+  `start/end`, `offset/limit`, `"120-250"`), alias tool names (`view`, `create`, `execute_bash`,
+  `functions.bash`, ...), and tools inferred from argument shape. Unknown arguments are never
+  ignored silently: the result says which ones were ignored.
 
-**4. Adaptive compute.** A second attempt (reset tree, fresh context, a digest of what failed)
-runs **only** when the first ends without proof. Easy issues cost one trajectory; hard ones get
-another try. The best attempt is chosen by evidence, then by patch size.
+### Model robustness
 
-**5. Recovery.** Provider errors are retried with backoff; unsupported parameters are dropped
-and remembered (`temperature` on reasoning models, `max_tokens` vs `max_completion_tokens`,
-...); context overflow triggers compaction; malformed tool arguments are repaired or bounced with
-the raw text; alias tool names (`view`, `execute_bash`, `read_file`, ...) are mapped onto the
-declared schema; a model that writes tool calls as text is parsed anyway (XML, Hermes, Qwen, JSON
-styles); an endpoint without native tool calling is switched to a text protocol automatically.
-Loop detection, repeated edit failures, no-progress and budget warnings are injected as
-harness notes.
+Native tool calling where available; automatic switch to a text protocol when an endpoint rejects
+tools; tool calls written as text (XML, `<invoke>`, Hermes, Qwen, JSON) are recovered, and
+anything a model "imagines" after its calls (self-written results) is discarded. Unsupported
+parameters are dropped and remembered (`temperature` on reasoning models, `max_tokens` vs
+`max_completion_tokens`, ...). 5xx errors get retries that *perturb* the request (some endpoints
+fail deterministically on one transcript). Reasoning models (gpt-oss) get their own recent reasoning
+passed back. Context overflow triggers compaction.
 
-**6. Efficiency.** The transcript is append-only so provider prompt caching works; old tool output
-is elided in one pass only once the prompt crosses a threshold; the reviewer and the second
-attempt run only when the evidence says they are needed. Every run reports tokens (input /
+### Efficiency
+
+Append-only transcript (provider prompt caching works) until the prompt crosses a threshold, then
+one batch compaction; file views made stale by an edit are elided immediately (their line numbers
+are wrong anyway); full-suite test runs are flagged. Second attempts, the independent test writer
+and the reviewer only run when the evidence calls for them. Every run reports tokens (input /
 cached / output), model calls and wall time.
 
 ## Evidence bundle
