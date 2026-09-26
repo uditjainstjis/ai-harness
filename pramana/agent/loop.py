@@ -76,7 +76,7 @@ class Attempt:
     def __init__(self, number: int, model: ChatModel, toolbox: Toolbox, gate: Gate, events: Events,
                  system_prompt: str, initial_message: str, max_steps: int, budget_left_fn,
                  compact_at_tokens: int = 60000, keep_recent: int = 8, temperature: Optional[float] = None,
-                 reviewer=None) -> None:
+                 reviewer=None, independent=None) -> None:
         self.n = number
         self.model = model
         self.toolbox = toolbox
@@ -90,6 +90,8 @@ class Attempt:
         self.keep_recent = keep_recent
         self.temperature = temperature
         self.reviewer = reviewer
+        self.independent = independent
+        self._independent_done = False
         self.result = AttemptResult(number=number)
         self._history: Deque[str] = deque(maxlen=12)
         self._nudged: set = set()
@@ -110,6 +112,27 @@ class Attempt:
         self.result.summary = payload.get("summary", "")
         self.events.emit("verify", attempt=self.n, accepted=v.accepted, strength=v.strength, round=v.round,
                          checks=[{"command": c.command, "verdict": c.verdict, "origin": c.origin} for c in v.checks])
+        if v.accepted and self.independent is not None and not self._independent_done and not final and v.patch.strip():
+            self._independent_done = True
+            self.events.emit("phase", name="review", attempt=self.n)
+            ind = self.independent()
+            if ind and ind.get("check") is not None:
+                chk = ind["check"]
+                v.checks.append(chk)
+                self.events.emit("verify", attempt=self.n, accepted=chk.verdict in ("fixes", "passes_both"), strength=v.strength,
+                                 round=v.round, checks=[{"command": chk.command, "verdict": chk.verdict, "origin": chk.origin}])
+                if chk.verdict in ("still_failing", "fails_after", "regression"):
+                    v.accepted = False
+                    body = (ind.get("file_content") or "")[:3000]
+                    return ToolResult(
+                        "HOLD ON - an independent regression test, written from the issue text by an agent that did not see "
+                        f"your patch, FAILS on your patched code.\n\nCommand: {chk.command}\n\nTest:\n{body}\n\n"
+                        f"Output with your patch (tail):\n{chk.after.tail if chk.after else ''}\n\n"
+                        "Decide which side is wrong. If the test's expectation matches the issue, your fix is incomplete: fix it "
+                        "and re-verify (you may run this test yourself). If the test contradicts the issue, say why in your "
+                        "summary. Then call submit again.",
+                        is_error=True,
+                    )
         if v.accepted and self.reviewer is not None and not self._reviewed and not final and v.patch.strip():
             self._reviewed = True
             self.events.emit("phase", name="review", attempt=self.n)

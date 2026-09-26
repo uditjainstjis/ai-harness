@@ -68,6 +68,15 @@ class LiveView:
             line = Text(f"intake: {d.get('language')} · {d.get('files')} files · tests: {d.get('test_command') or '?'}", style="cyan")
             for n in d.get("notes") or []:
                 self._push(Text(f"  note: {n}", style="yellow"))
+        elif kind == "independent_test":
+            st = d.get("status")
+            if st == "written":
+                line = Text(f"  🧪 independent test written ({d.get('steps')} steps): {str(d.get('command'))[:90]}", style="cyan")
+            elif st == "ran":
+                v = d.get("verdict")
+                line = Text(f"  🧪 independent test on original vs patched: {v}", style="green" if v in ("fixes", "passes_both") else "red")
+            elif st == "gave_up":
+                line = Text("  🧪 independent test writer gave up (no test)", style="dim")
         elif kind == "criteria":
             n = len((d.get("text") or "").splitlines())
             line = Text(f"acceptance checklist predicted: {n} criteria", style="cyan")

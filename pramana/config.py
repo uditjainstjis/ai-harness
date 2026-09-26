@@ -99,6 +99,7 @@ class AgentConfig:
     keep_recent_observations: int = 6
     review: bool = True  # independent reviewer pass on the final diff
     criteria: bool = True  # predict a maintainer's acceptance checklist at intake (1 cheap call)
+    independent_tests: bool = True  # blind second agent writes a regression test from the issue; run before/after
     seed: int = 7
 
 

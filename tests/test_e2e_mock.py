@@ -43,6 +43,11 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
         {"tool_calls": [{"name": "submit", "arguments": {
             "summary": "mean() divided by len(xs) without handling empty input; it now returns 0.0 for [].",
             "verification_commands": [f"{py} .pramana/repro.py"]}}]},
+        # independent test writer (never sees the patch)
+        {"tool_calls": [{"name": "str_replace_editor", "arguments": {
+            "command": "create", "path": ".pramana/test_independent.py",
+            "file_text": "from mathx.stats import mean\nassert mean([]) == 0.0\nassert mean([1, 2, 3]) == 2.0\n"}}]},
+        {"tool_calls": [{"name": "done", "arguments": {"command": f"{py} .pramana/test_independent.py"}}]},
         {"text": '{"verdict": "approve", "concerns": []}'},  # reviewer
     ]
     monkeypatch.setenv("AI_PROVIDER", "mock")
@@ -59,6 +64,8 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
     assert "if not xs" in (repo / "mathx" / "stats.py").read_text()
     verdicts = [c.verdict for c in res.verification.checks]
     assert verdicts[0] == "fixes"
+    independent = [c for c in res.verification.checks if c.origin == "independent"]
+    assert independent and independent[0].verdict == "fixes"
     assert not (repo / ".pramana").exists()  # scratch moved into the evidence bundle
     bundle = res.run_dir
     for name in ("report.md", "report.html", "patch.diff", "evidence.json", "trajectory.jsonl", "transcript_attempt1.json"):

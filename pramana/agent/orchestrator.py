@@ -77,6 +77,37 @@ class Orchestrator:
             self.events.emit("criteria", text=text)
         return text
 
+    def _independent(self, issue_text: str, criteria: str, info: RepoInfo, related: str, git: GitTracker, gate: Gate,
+                     toolbox: Toolbox):
+        def run() -> Optional[Dict[str, Any]]:
+            from .testwriter import TestWriter
+            from .verify import Check
+
+            before_patch = git.patch()
+            out = TestWriter(self.model, toolbox, self.events).run(issue_text, criteria, info.summary(), related)
+            if git.patch() != before_patch:  # the writer may only add scratch files: restore the fix exactly
+                git.reset_to_base()
+                git.apply(before_patch)
+                self.events.emit("log", level="warn", message="independent test writer touched source files; patch restored")
+            if not out:
+                return None
+            chk = Check(out["command"], "independent")
+            chk.after = gate._run(chk.command)
+            try:
+                with git.baseline():
+                    chk.before = gate._run(chk.command)
+            except Exception:  # noqa: BLE001
+                chk.before = None
+            chk.classify()
+            content = ""
+            for tok in chk.command.split():
+                if tok.startswith(".pramana/") and (info.root / tok.split("::")[0]).is_file():
+                    content = (info.root / tok.split("::")[0]).read_text(errors="replace")
+                    break
+            self.events.emit("independent_test", status="ran", command=chk.command, verdict=chk.verdict)
+            return {"check": chk, "file_content": content}
+        return run
+
     def _reviewer(self, issue_text: str):
         def review(v: Verification) -> Optional[Dict[str, Any]]:
             patch = v.patch if len(v.patch) < 14000 else v.patch[:14000] + "\n[... patch truncated ...]"
@@ -176,10 +207,13 @@ class Orchestrator:
                             max_rounds=cfg.agent.max_gate_rejections)
                 initial = prompts.build_initial(issue_text, info.overview, hints, acceptance_cmd, lessons, snippet_block, criteria)
                 temp = cfg.model.temperature if n == 1 else max(cfg.model.temperature, 0.6)
+                related = ", ".join(c.path for c in tests[:3])
                 attempt = Attempt(
                     n, self.model, toolbox, gate, ev, system, initial, cfg.agent.max_steps, budget_left,
                     compact_at_tokens=cfg.agent.compact_at_tokens, keep_recent=cfg.agent.keep_recent_observations,
                     temperature=temp, reviewer=self._reviewer(issue_text) if cfg.agent.review else None,
+                    independent=(self._independent(issue_text, criteria, info, related, git, gate, toolbox)
+                                 if cfg.agent.independent_tests else None),
                 )
                 res = attempt.run()
                 result.attempts.append(res)
