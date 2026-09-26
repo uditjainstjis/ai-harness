@@ -78,13 +78,29 @@ parameters are dropped and remembered (`temperature` on reasoning models, `max_t
 fail deterministically on one transcript). Reasoning models (gpt-oss) get their own recent reasoning
 passed back. Context overflow triggers compaction.
 
+### Keeping the agent on track
+
+The harness watches the trajectory and intervenes with short notes: repeated identical calls,
+repeated failed edits on one file, editing a file back to a version it already had, many steps with
+no source change, running the whole test suite (where failures are usually pre-existing), writing
+throwaway `python -c` probes instead of one reusable reproduction file, and the step budget
+running low.
+
+The strongest of these is the **harness checkpoint**, which costs no model tokens: once the agent
+has edited source and run something successfully, the harness re-runs its commands on the original
+and patched code itself. If the change *already* carries proof, it tells the agent so and asks it to
+submit instead of exploring further. On one bundled task this cut a run from 26 steps to 15 with the
+same verified result; across a SWE-bench subset it cut mean tokens per task by ~17% at equal
+resolve rate.
+
 ### Efficiency
 
 Append-only transcript (provider prompt caching works) until the prompt crosses a threshold, then
 one batch compaction; file views made stale by an edit are elided immediately (their line numbers
-are wrong anyway); full-suite test runs are flagged. Second attempts, the independent test writer
-and the reviewer only run when the evidence calls for them. Every run reports tokens (input /
-cached / output), model calls and wall time.
+are wrong anyway); long pasted logs and package lists in an issue are condensed once at intake
+rather than re-sent every turn. Second attempts, the independent test writer and the reviewer only
+run when the evidence calls for them. Every run reports tokens (input / cached / output), model
+calls and wall time.
 
 ## Measured results
 
