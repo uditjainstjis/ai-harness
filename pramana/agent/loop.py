@@ -172,8 +172,15 @@ class Attempt:
                 # Some endpoints fail deterministically on a specific transcript. Identical retries
                 # cannot help there, so each retry perturbs the request a little more.
                 if attempt == 1:
-                    messages.append({"role": "user", "content": "Continue with the task.", "_nudge": True})
+                    # the newest tool output is the most common trigger: shorten it
+                    last_tool = next((m for m in reversed(messages) if m.get("role") == "tool"), None)
+                    if last_tool and len(last_tool.get("content") or "") > 600:
+                        c = last_tool["content"]
+                        last_tool["content"] = c[:300] + "\n[... output shortened after a provider error ...]\n" + c[-200:]
+                    else:
+                        messages.append({"role": "user", "content": "Continue with the task.", "_nudge": True})
                 elif attempt == 2:
+                    messages.append({"role": "user", "content": "Continue with the task.", "_nudge": True})
                     compact(messages, keep_recent=2, head=300, tail=200)
                 elif attempt == 3:
                     temperature = 0.7
