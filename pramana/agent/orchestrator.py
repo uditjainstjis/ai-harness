@@ -62,10 +62,27 @@ class Orchestrator:
         self.events = events or Events()
         self.model = model
 
+    def _predict_criteria(self, issue_text: str) -> str:
+        self.events.emit("phase", name="localize")
+        try:
+            resp = self.model.chat([{"role": "system", "content": "You are a meticulous senior maintainer."},
+                                    {"role": "user", "content": prompts.CRITERIA_PROMPT.format(issue=issue_text[:12000])}],
+                                   tools=None, temperature=0.0)
+        except Exception as e:  # noqa: BLE001 - optional step
+            self.events.emit("log", level="warn", message=f"criteria prediction skipped: {str(e)[:120]}")
+            return ""
+        lines = [l.strip() for l in (resp.text or "").splitlines() if re.match(r"^\s*\d+[.)]\s+\S", l)]
+        text = "\n".join(lines[:8])[:2000]
+        if text:
+            self.events.emit("criteria", text=text)
+        return text
+
     def _reviewer(self, issue_text: str):
         def review(v: Verification) -> Optional[Dict[str, Any]]:
             patch = v.patch if len(v.patch) < 14000 else v.patch[:14000] + "\n[... patch truncated ...]"
-            prompt = prompts.REVIEW_PROMPT.format(issue=issue_text[:10000], patch=patch, evidence=render_checks(v.checks))
+            crit = getattr(self, "_criteria", "")
+            prompt = prompts.REVIEW_PROMPT.format(issue=issue_text[:10000], patch=patch, evidence=render_checks(v.checks),
+                                                  criteria=(f"<predicted_acceptance_criteria>\n{crit}\n</predicted_acceptance_criteria>\n" if crit else ""))
             try:
                 resp = self.model.chat([{"role": "system", "content": "You are a meticulous code reviewer."},
                                         {"role": "user", "content": prompt}], tools=None, temperature=0.0)
@@ -137,6 +154,8 @@ class Orchestrator:
             result.hints = hints
             ev.emit("localized", hints=hints, seconds=round(time.time() - t0, 2), top=[c.path for c in src[:5]])
 
+            criteria = self._predict_criteria(issue_text) if cfg.agent.criteria else ""
+            self._criteria = criteria
             system = prompts.SYSTEM_PROMPT.format(root=root, repo_summary=info.summary().replace("\n", "\n- "))
             lessons: Optional[str] = None
             budget = cfg.agent.token_budget
@@ -155,7 +174,7 @@ class Orchestrator:
                 gate = Gate(root, git, info.files, info.test_file_command, info.test_framework, toolbox.env,
                             timeout_s=cfg.agent.verify_timeout_s, acceptance_cmd=acceptance_cmd,
                             max_rounds=cfg.agent.max_gate_rejections)
-                initial = prompts.build_initial(issue_text, info.overview, hints, acceptance_cmd, lessons, snippet_block)
+                initial = prompts.build_initial(issue_text, info.overview, hints, acceptance_cmd, lessons, snippet_block, criteria)
                 temp = cfg.model.temperature if n == 1 else max(cfg.model.temperature, 0.6)
                 attempt = Attempt(
                     n, self.model, toolbox, gate, ev, system, initial, cfg.agent.max_steps, budget_left,

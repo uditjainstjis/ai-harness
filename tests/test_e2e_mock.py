@@ -31,6 +31,7 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
     repo = _repo(tmp_path)
     py = sys.executable
     script = [
+        {"text": "1. mean([]) -> 0.0\n2. mean([1, 2, 3]) -> 2.0 (unchanged)"},  # acceptance-criteria prediction
         {"tool_calls": [{"name": "find_definition", "arguments": {"symbol": "mean"}}]},
         {"tool_calls": [{"name": "str_replace_editor", "arguments": {
             "command": "create", "path": ".pramana/repro.py",
@@ -65,4 +66,6 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
     assert (bundle / "scratch" / "repro.py").exists()
     ev = json.loads((bundle / "evidence.json").read_text())
     assert ev["status"] == "verified" and ev["patch"]["files"] == 1
-    assert "verify" in seen and "review" in seen
+    assert "verify" in seen and "review" in seen and "criteria" in seen
+    first_user = json.loads((bundle / "transcript_attempt1.json").read_text())[1]["content"]
+    assert "<acceptance_criteria>" in first_user and "mean([]) -> 0.0" in first_user

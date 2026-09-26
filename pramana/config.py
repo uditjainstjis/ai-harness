@@ -98,6 +98,7 @@ class AgentConfig:
     compact_at_tokens: int = 28000  # compact old tool output past this prompt size
     keep_recent_observations: int = 6
     review: bool = True  # independent reviewer pass on the final diff
+    criteria: bool = True  # predict a maintainer's acceptance checklist at intake (1 cheap call)
     seed: int = 7
 
 

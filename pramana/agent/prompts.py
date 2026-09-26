@@ -40,7 +40,7 @@ INITIAL_TEMPLATE = """<issue>
 Deterministic ranking of likely-relevant code (a starting point - verify it, don't trust it blindly):
 {hints}
 </localization_hints>
-{snippets}{acceptance}{lessons}
+{snippets}{criteria}{acceptance}{lessons}
 Start by localizing the code responsible for this issue."""
 
 ACCEPTANCE_TEMPLATE = """
@@ -57,6 +57,25 @@ A previous attempt at this issue did not produce a verified fix. The repository 
 {lessons}
 Do not repeat the same approach blindly: re-examine the root cause and consider a different fix location or strategy.
 </previous_attempt>
+"""
+
+CRITERIA_PROMPT = """You are preparing the acceptance checklist for this issue before anyone writes code.
+
+<issue>
+{issue}
+</issue>
+
+List the concrete, observable behaviours a maintainer's regression test would assert once the issue is resolved:
+- every example in the issue, with its expected result;
+- natural sibling cases the same fix must also cover (related functions/classes/modes/arguments that share the code path);
+- existing behaviour that must remain unchanged.
+Write at most 8 lines, each formatted "N. <inputs/situation> -> <expected observable result>". Be specific. Do not propose an implementation. If an expected result cannot be determined from the issue, write "unspecified" for it."""
+
+CRITERIA_TEMPLATE = """
+<acceptance_criteria>
+Predicted by the harness from the issue (a maintainer's-eye checklist; verify each item against the issue text and drop any that contradict it). Make your reproduction check them:
+{criteria}
+</acceptance_criteria>
 """
 
 NO_TOOL_NUDGE = (
@@ -95,6 +114,7 @@ REVIEW_PROMPT = """You are reviewing a patch produced by an autonomous agent for
 <evidence>
 {evidence}
 </evidence>
+{criteria}
 
 Work through these steps before deciding:
 1. Write down (to yourself) the regression test the project's maintainers would add for this issue: 3-6 concrete assertions covering every case in the issue, the obvious sibling cases (related functions/classes/modes that share the code path), and behaviour that must stay unchanged.
@@ -107,12 +127,13 @@ Say "revise" only for a concrete defect you can name (a failing assertion from s
 
 
 def build_initial(issue: str, overview: str, hints: str, acceptance_cmd: Optional[str], lessons: Optional[str],
-                  snippets: str = "") -> str:
+                  snippets: str = "", criteria: str = "") -> str:
     return INITIAL_TEMPLATE.format(
         issue=issue,
         overview=overview,
         hints=hints,
         snippets=snippets,
+        criteria=CRITERIA_TEMPLATE.format(criteria=criteria) if criteria else "",
         acceptance=ACCEPTANCE_TEMPLATE.format(cmd=acceptance_cmd) if acceptance_cmd else "",
         lessons=LESSONS_TEMPLATE.format(lessons=lessons) if lessons else "",
     )

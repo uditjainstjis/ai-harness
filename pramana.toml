@@ -26,6 +26,7 @@ verify_timeout_s = 300
 compact_at_tokens = 28000
 keep_recent_observations = 6
 review = true              # independent reviewer pass before a patch is accepted
+criteria = true            # predict the maintainers' acceptance checklist at intake (one cheap call)
 seed = 7
 
 [paths]
