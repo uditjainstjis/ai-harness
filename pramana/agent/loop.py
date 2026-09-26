@@ -100,7 +100,7 @@ class Attempt:
         self._checkpoints = 0
         self._last_checkpoint_step = 0
         self._accepted = False
-        self._reviewed = False
+        self._reviews = 0
         self._last_prompt_tokens = 0
         self._step = 0
         toolbox.on_submit = self._on_submit
@@ -135,8 +135,8 @@ class Attempt:
                         "summary. Then call submit again.",
                         is_error=True,
                     )
-        if v.accepted and self.reviewer is not None and not self._reviewed and not final and v.patch.strip():
-            self._reviewed = True
+        if v.accepted and self.reviewer is not None and self._reviews < 2 and not final and v.patch.strip():
+            self._reviews += 1
             self.events.emit("phase", name="review", attempt=self.n)
             review = self.reviewer(v)
             self.result.review = review
