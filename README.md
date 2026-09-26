@@ -86,6 +86,43 @@ are wrong anyway); full-suite test runs are flagged. Second attempts, the indepe
 and the reviewer only run when the evidence calls for them. Every run reports tokens (input /
 cached / output), model calls and wall time.
 
+## Measured results
+
+Everything below was produced by this repository; the harness is graded by tests it never sees.
+
+**SWE-bench Verified** (real GitHub issues, graded by their hidden `FAIL_TO_PASS` + `PASS_TO_PASS`
+tests) — 19-instance stratified sample, run locally without Docker through the same code path as
+`make run`. Reproduce with [`bench/swebench/`](bench/swebench/).
+
+| repository | resolved | mean tokens / task | mean wall / task |
+|---|---|---|---|
+| `django/django` | **5/9** | 1155k | 668s |
+| `pytest-dev/pytest` | **3/4** | 1105k | 437s |
+| `sympy/sympy` | **3/6** | 496k | 214s |
+| **total** | **11/19 (58%)** | 936k | 476s |
+
+Model: `gpt-oss-120b` (a free open-weights endpoint, not a frontier model) at temperature 0.
+Token counts are raw; on a provider with prompt caching most input tokens are cache reads.
+Honest caveats: 19 instances is a small sample, it is drawn from the repos that install cleanly
+without Docker, and an environment counts only if the *official* patch passes its tests here
+(that check excludes `psf/requests`, which needs network access, and `pallets/flask`).
+
+**Bundled benchmark** (`make bench`) — 4 tasks with hidden tests: two Python bug fixes, a
+JavaScript bug fix, and a feature request.
+
+| model | resolved | tokens |
+|---|---|---|
+| `gpt-oss-120b` (native tool calling) | **4/4** | 296k |
+| `gemma4` (different family) | **4/4** | 487k |
+| `gemma4`, forced into the **text** tool protocol | **1/1** (`slugify`) | 81k |
+
+The harness is not tuned to one model family or one tool-calling style.
+
+**Offline tests** (`make test`, no API key): 27 tests covering the editor's tolerant matching and
+lint gate, the submit gate's fail→pass / regression classification, git patch isolation, the text
+tool protocol, tool-name and argument canonicalisation, localization, dependency-stub rejection,
+and both provider wire formats against a fake HTTP server.
+
 ## Evidence bundle
 
 Every run writes `runs/<timestamp>-<issue>/`:
