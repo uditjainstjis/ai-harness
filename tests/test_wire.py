@@ -116,3 +116,18 @@ def test_openai_context_overflow_is_typed(monkeypatch):
             OpenAICompatLLM(srv.url, "k", "m", provider="groq").chat(HISTORY, tools=TOOLS)
     finally:
         srv.close()
+
+
+def test_azure_style_endpoint(monkeypatch):
+    ok = {"choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}], "usage": {}}
+    srv = FakeServer([(200, ok)])
+    try:
+        llm = OpenAICompatLLM(srv.url, "azkey", "my-deployment", provider="azure")
+        llm.base_url = srv.url  # keep the fake server's path root
+        resp = llm.chat([{"role": "user", "content": "x"}], tools=None)
+    finally:
+        srv.close()
+    req = srv.requests[-1]
+    assert resp.text == "hi"
+    assert req["headers"].get("api-key") == "azkey" and "Authorization" not in req["headers"]
+    assert "/openai/deployments/my-deployment/chat/completions" in req["path"] and "api-version=" in req["path"]

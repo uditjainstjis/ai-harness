@@ -35,6 +35,7 @@ PROVIDERS: Dict[str, Dict[str, str]] = {
     "huggingface": {"kind": "openai", "base_url": "https://router.huggingface.co/v1", "model": "openai/gpt-oss-120b"},
     "moonshot": {"kind": "openai", "base_url": "https://api.moonshot.ai/v1", "model": "kimi-k2-0905-preview"},
     "ollama": {"kind": "openai", "base_url": "http://localhost:11434/v1", "model": "gpt-oss:120b-cloud"},
+    "azure": {"kind": "openai", "base_url": "", "model": ""},
     "claude-cli": {"kind": "claude-cli", "base_url": "", "model": "haiku"},
     "mock": {"kind": "mock", "base_url": "", "model": "mock"},
 }
@@ -203,7 +204,7 @@ def resolve_provider(cfg: Config) -> None:
         if detected:
             prov = detected
         elif cfg.model.base_url:
-            prov = "openai-compatible"
+            prov = "azure" if ".azure.com" in cfg.model.base_url or "azure-api.net" in cfg.model.base_url else "openai-compatible"
         elif not cfg.api_key:
             # no key at all: try provider-specific fallbacks (local development convenience)
             for name, var in FALLBACK_KEY_ENVS.items():

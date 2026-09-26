@@ -94,8 +94,15 @@ class OpenAICompatLLM:
         self.reasoning_window = 6 if "gpt-oss" in model.lower() else 0
         self.text_mode_stops: List[str] = []  # set by ChatModel when it drives this backend in text mode
         headers = {"Content-Type": "application/json"}
+        self.api_version = os.environ.get("AI_API_VERSION", "").strip()
+        self.is_azure = provider == "azure" or ".azure.com" in self.base_url or "azure-api.net" in self.base_url
         if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+            if self.is_azure:
+                headers["api-key"] = api_key  # Azure OpenAI authenticates with this header, not Bearer
+                if not self.api_version:
+                    self.api_version = "2024-10-21"
+            else:
+                headers["Authorization"] = f"Bearer {api_key}"
         if provider == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/pramana-harness"
             headers["X-Title"] = "Pramana coding harness"
@@ -196,6 +203,10 @@ class OpenAICompatLLM:
 
     def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[ToolSpec]] = None, temperature: Optional[float] = None) -> LLMResponse:
         url = f"{self.base_url}/chat/completions"
+        if self.is_azure and "/deployments/" not in url and self.model:
+            url = f"{self.base_url}/openai/deployments/{self.model}/chat/completions"
+        if self.api_version:
+            url += ("&" if "?" in url else "?") + f"api-version={self.api_version}"
         attempt = 0
         negotiations = 0
         while True:

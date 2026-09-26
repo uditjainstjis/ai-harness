@@ -136,10 +136,18 @@ JavaScript bug fix, and a feature request.
 
 The harness is not tuned to one model family or one tool-calling style.
 
-**Offline tests** (`make test`, no API key): 27 tests covering the editor's tolerant matching and
-lint gate, the submit gate's fail→pass / regression classification, git patch isolation, the text
-tool protocol, tool-name and argument canonicalisation, localization, dependency-stub rejection,
-and both provider wire formats against a fake HTTP server.
+**Offline tests** (`make test`, no API key): 37 tests. Unit coverage for the editor's tolerant
+matching, lint gate and CRLF/BOM preservation; the submit gate's fail→pass / regression
+classification; git patch isolation; the text tool protocol; tool-name and argument
+canonicalisation; localization; dependency-stub rejection; and both provider wire formats against a
+fake HTTP server (retries, parameter negotiation, message ordering, Azure paths).
+
+Six of them run the **whole agent against deliberately hostile endpoints**, because the evaluation
+model is not known in advance: an endpoint that rejects tool calling (the harness falls back to the
+text protocol and still lands a verified fix), one that returns HTML garbage and 429s mid-run, a
+context window too small for the prompt (the harness shortens the task description and still
+finishes), a context window too small to be workable at all (it stops cleanly, leaves the
+repository untouched and still writes a report), and a model that never calls a tool.
 
 ## Evidence bundle
 
@@ -170,6 +178,11 @@ bundle).
 | `xai-`, `nvapi-`, `csk-`, `hf_`, `fw_`, `tgp_` | xAI, NVIDIA, Cerebras, Hugging Face, Fireworks, Together | see `pramana/config.py` |
 | `sk-` | OpenAI | `gpt-5-mini` |
 | anything else | any OpenAI-compatible endpoint: set `AI_BASE_URL` (+ `AI_MODEL`) | |
+
+Azure OpenAI is detected from the URL (or `AI_PROVIDER=azure`): it authenticates with the `api-key`
+header and builds the `/openai/deployments/<AI_MODEL>/chat/completions?api-version=...` path
+(override with `AI_API_VERSION`). A local dev backend that drives an already-signed-in Claude Code
+CLI is available with `AI_PROVIDER=claude-cli`; it needs no key and is useful for development.
 
 If the Organising Committee prescribes a model, set `name` in `pramana.toml` (or `AI_MODEL`);
 nothing else changes. `make doctor` checks connectivity and whether native tool calling works.
