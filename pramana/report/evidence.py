@@ -189,3 +189,44 @@ def write_bundle(result, cfg) -> None:
     for a in result.attempts:
         msgs = [{k: v for k, v in m.items() if not k.startswith("_")} for m in a.messages]
         (d / f"transcript_attempt{a.number}.json").write_text(json.dumps(msgs, indent=1, default=str))
+    try:
+        write_index(d.parent)
+    except Exception:  # noqa: BLE001 - the index is a convenience
+        pass
+
+
+def write_index(runs_dir) -> Path:
+    """runs/index.html: every run at a glance (verdict, tokens, time, links to the evidence)."""
+    runs_dir = Path(runs_dir)
+    rows = []
+    for ev_path in sorted(runs_dir.glob("*/evidence.json"), reverse=True):
+        try:
+            ev = json.loads(ev_path.read_text())
+        except (OSError, ValueError):
+            continue
+        rid = ev_path.parent.name
+        u = ev.get("usage", {})
+        checks = (ev.get("verification") or {}).get("checks") or []
+        fixes = sum(1 for c in checks if c.get("verdict") == "fixes")
+        rows.append((rid, ev, u, fixes, len(checks)))
+    esc = html.escape
+    body = "".join(
+        f"<tr><td><span class='badge {esc(ev.get('status', ''))}'>{esc(ev.get('status', ''))}</span></td>"
+        f"<td><a href='{esc(rid)}/report.html'>{esc(ev.get('issue', {}).get('title', rid))[:90]}</a><div class='sub'>{esc(rid[:15])} · {esc(ev.get('model', ''))}</div></td>"
+        f"<td>{fixes}/{n}</td><td>{u.get('total_tokens', 0):,}</td><td>{u.get('calls', 0)}</td><td>{ev.get('elapsed_s', 0):.0f}s</td>"
+        f"<td>+{ev.get('patch', {}).get('added', 0)} / -{ev.get('patch', {}).get('removed', 0)}</td></tr>"
+        for rid, ev, u, fixes, n in rows
+    )
+    total = len(rows)
+    verified = sum(1 for r in rows if r[1].get("status") == "verified")
+    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pramana runs</title><style>{CSS}
+.sub{{color:var(--muted);font-size:12px}} td .badge{{margin:0;padding:3px 8px;font-size:12px}} a{{color:var(--fg)}}</style></head>
+<body><main><h1>Pramana · run history</h1>
+<div class="kv"><div><span>runs</span><b>{total}</b></div><div><span>verified fixes</span><b>{verified}</b></div>
+<div><span>tokens (all runs)</span><b>{sum(r[2].get('total_tokens', 0) for r in rows):,}</b></div></div>
+<div class="card"><table><tr><th>verdict</th><th>issue</th><th>proof checks</th><th>tokens</th><th>calls</th><th>time</th><th>patch</th></tr>{body}</table></div>
+</main></body></html>"""
+    out = runs_dir / "index.html"
+    out.write_text(page)
+    return out

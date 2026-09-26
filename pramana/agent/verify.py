@@ -161,6 +161,7 @@ class Gate:
         self.max_rounds = max_rounds
         self.rounds = 0
         self.asked_for_proof = False
+        self.warned_tests = False
         self.history: List[Verification] = []
 
     def _run(self, cmd: str) -> Outcome:
@@ -254,6 +255,15 @@ class Gate:
             label = "the acceptance test" if c.origin == "acceptance" else "your verification command"
             problems.append(f"{label} `{c.command}` still fails after your change ({c.after.summary if c.after else '?'}):\n{c.after.tail if c.after else ''}")
 
+        edited_tests = [p for s, p in changed if s == "M" and is_test_path(p)]
+        if edited_tests and not self.warned_tests and not last_round:
+            self.warned_tests = True
+            problems.append(
+                "Your patch modifies existing test files: " + ", ".join(edited_tests[:5]) + ". Tests encode the "
+                "expected behaviour; changing them to make them pass hides bugs, and evaluators replace them with "
+                "their own versions. Revert those edits (str_replace_editor undo_edit) unless the issue explicitly "
+                "asks for a test change, and fix the source code instead."
+            )
         table = render_checks(checks)
         if problems and not last_round:
             v.feedback += "REJECTED - the evidence does not support the fix yet.\n\n" + table + "\n\n" + "\n\n".join(problems) + \

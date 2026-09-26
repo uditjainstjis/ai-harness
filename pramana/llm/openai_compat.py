@@ -100,7 +100,7 @@ class OpenAICompatLLM:
 
     # ------------------------------------------------------------------ wire format
     @staticmethod
-    def _to_wire(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _to_wire(messages: List[Dict[str, Any]], tool_names: bool = True) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         for m in messages:
             role = m["role"]
@@ -123,7 +123,10 @@ class OpenAICompatLLM:
                         wm["content"] = None
                 out.append(wm)
             elif role == "tool":
-                out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m.get("content") or "(no output)"})
+                tm = {"role": "tool", "tool_call_id": m["tool_call_id"], "content": m.get("content") or "(no output)"}
+                if tool_names and m.get("name"):
+                    tm["name"] = m["name"]  # Gemini/Groq-style endpoints map results by function name
+                out.append(tm)
             else:
                 out.append({"role": role, "content": m.get("content") or ""})
         return out
@@ -137,7 +140,7 @@ class OpenAICompatLLM:
 
     # ------------------------------------------------------------------ request
     def _payload(self, messages, tools, temperature) -> Dict[str, Any]:
-        p: Dict[str, Any] = {"model": self.model, "messages": self._to_wire(messages)}
+        p: Dict[str, Any] = {"model": self.model, "messages": self._to_wire(messages, tool_names=self.provider != "openai")}
         if tools:
             p["tools"] = self._tools_to_wire(tools)
             if "parallel_tool_calls" not in self._dropped and self.provider in ("openai", "openrouter", "groq", "together", "fireworks"):

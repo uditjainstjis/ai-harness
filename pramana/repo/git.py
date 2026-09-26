@@ -185,6 +185,14 @@ class GitTracker:
             self.apply(patch_text, reverse=True)
         return patch_text
 
+    def restore(self, path: str) -> bool:
+        """Put one file back to its baseline content."""
+        p = self._run(["git", "show", f"{self.base}:{path}"], check=False)
+        if p.returncode != 0:
+            return False
+        (self.root / path).write_bytes(p.stdout)
+        return True
+
     def diffstat(self, patch_text: str) -> Tuple[int, int, int]:
         files = added = removed = 0
         for line in patch_text.splitlines():

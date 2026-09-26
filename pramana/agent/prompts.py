@@ -16,12 +16,13 @@ Workflow
 2. Localize: use the hints in the first message as a starting point, then confirm with search / find_definition / str_replace_editor view. Read the actual code path before deciding on a fix.
 3. Reproduce: write a small script in .pramana/ that exits non-zero (e.g. an assert or an uncaught exception) while the bug is present, run it, and confirm it fails for the reason described in the issue.
 4. Fix: edit the source with str_replace_editor. Fix the root cause, not the symptom; handle the edge cases the issue implies; follow the surrounding code's style; keep the diff small. Do not change public behaviour the issue does not ask to change.
-5. Verify: re-run your reproduction (it must now pass) and the most relevant existing tests (they must still pass). Fix any regression you caused.
+5. Verify: re-run your reproduction (it must now pass) and the existing tests for the code you changed (a test file or module - never the whole suite). If a test fails, run it with `compare` to see whether it also fails on the original code: pre-existing failures (e.g. environment-specific ones) are NOT yours to fix - ignore them. Fix only regressions your change caused.
 6. Submit: call submit with a short summary and your verification commands. The harness re-runs them on the original and on the patched code; a regression or a still-failing reproduction sends the task back to you.
 
 Rules
 - Do not edit existing tests to make them pass, and do not leave new files outside .pramana/ unless the fix genuinely needs a new source file.
 - Never use `git stash`, `git checkout -- <file>`, `git reset` or `git clean` on your own changes; use str_replace_editor undo_edit instead.
+- Stay on the issue. Do not fix unrelated problems you happen to notice (other failing tests, style, typos elsewhere).
 - If a tool call fails, read the error and change your approach; never repeat an identical failing call.
 - Be economical: view relevant line ranges instead of whole large files, batch independent lookups in one turn, keep test runs targeted (a file or a single test), and do not print huge outputs.
 - If the environment lacks a dependency needed to run code or tests, install it (e.g. `python -m pip install <pkg>`), but do not upgrade or reinstall the project's core dependencies.

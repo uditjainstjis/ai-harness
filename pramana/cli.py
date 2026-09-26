@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import os
 import sys
@@ -148,10 +149,16 @@ def cmd_run(args) -> int:
         try:
             default = f" [{last_repo}]" if last_repo else ""
             repo = console.input(f"[bold]Repository[/] (local path or git URL; blank = infer from a GitHub issue URL){default}: ").strip() or last_repo
-            issue_spec = read_multiline(
-                "[bold]Issue[/]: paste a GitHub issue URL, owner/repo#N, a file path, or the issue text. "
-                "Finish multi-line text with a line containing only END (or Ctrl-D)."
-            )
+            issue_spec = ""
+            if re.search(r"github\.com/[\w.-]+/[\w.-]+/(issues|pull)/\d+", repo) or re.fullmatch(r"[\w.-]+/[\w.-]+#\d+", repo):
+                # an issue link typed at the repository prompt: use it as the issue, infer the repo
+                issue_spec, repo = repo, ""
+                console.print(f"[dim]  treating that as the issue; the repository will be taken from it.[/]")
+            if not issue_spec:
+                issue_spec = read_multiline(
+                    "[bold]Issue[/]: paste a GitHub issue URL, owner/repo#N, a file path, or the issue text. "
+                    "Finish multi-line text with a line containing only END (or Ctrl-D)."
+                )
             if not issue_spec:
                 console.print("[yellow]No issue entered.[/]")
                 continue

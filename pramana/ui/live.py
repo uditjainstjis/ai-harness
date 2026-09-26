@@ -13,7 +13,7 @@ from rich.table import Table
 from rich.text import Text
 
 PHASES = ["intake", "localize", "reproduce", "fix", "verify", "review"]
-ICONS = {"bash": "$", "str_replace_editor": "✎", "search": "⌕", "find_definition": "ƒ", "find_files": "▤", "submit": "✔"}
+ICONS = {"bash": "$", "str_replace_editor": "✎", "search": "⌕", "find_definition": "ƒ", "find_files": "▤", "compare": "⇄", "submit": "✔"}
 ACCENT = "#c2622d"
 
 
@@ -61,10 +61,9 @@ class LiveView:
             line = Text(f"run → {d.get('run_dir')}", style="dim")
         elif kind == "phase":
             name = d.get("name", "")
-            if name != self.phase:
-                if self.phase and self.phase not in self.done_phases:
-                    self.done_phases.append(self.phase)
-                self.phase = name
+            if self.phase and self.phase not in self.done_phases:
+                self.done_phases.append(self.phase)
+            self.phase = name
         elif kind == "intake":
             line = Text(f"intake: {d.get('language')} · {d.get('files')} files · tests: {d.get('test_command') or '?'}", style="cyan")
             for n in d.get("notes") or []:
@@ -75,7 +74,7 @@ class LiveView:
         elif kind == "attempt":
             self.attempt = d.get("attempt", 1)
             if d.get("status") == "start" and self.attempt > 1:
-                self.done_phases = ["intake", "localize"]
+                self.done_phases = ["intake"]
                 line = Text(f"── attempt {self.attempt} (fresh context, lessons from attempt {self.attempt - 1}) ──", style=f"bold {ACCENT}")
             elif d.get("status") == "end":
                 line = Text(f"attempt {self.attempt} ended: {d.get('stop_reason')} · evidence {d.get('strength')} · {d.get('steps')} steps", style="bold")
@@ -95,6 +94,9 @@ class LiveView:
             if d.get("is_error"):
                 first = (d.get("output") or "").strip().splitlines()[:1]
                 line = Text("    ↳ " + (first[0][:140] if first else "error"), style="red")
+            elif d.get("name") == "compare":
+                verdict = next((l for l in (d.get("output") or "").splitlines() if l.startswith("=>")), "")
+                line = Text("    ↳ " + verdict[3:140], style="cyan")
             elif d.get("name") == "str_replace_editor" and (d.get("meta") or {}).get("edited"):
                 first = (d.get("output") or "").splitlines()[:1]
                 line = Text("    ↳ " + (first[0][:140] if first else "edited"), style="green")

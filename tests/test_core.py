@@ -196,3 +196,20 @@ def test_toolbox_end_to_end_calls(tmp_path):
     assert r.is_error and "exit code 3" in r.output
     r = tb.execute(ToolCall("4", "str_replace_editor", {"path": "app.py", "old_str": "'hi '", "new_str": "'hello '"}))
     assert not r.is_error and "hello" in (repo / "app.py").read_text()
+
+
+def test_compare_tool_and_oscillation(tmp_path):
+    repo = make_repo(tmp_path, {"calc.py": "def add(a, b):\n    return a - b\n", "legacy.py": "X = 1\n"})
+    git = GitTracker(repo)
+    tb = Toolbox(repo, repo / ".pramana", SymbolIndex(repo, ["calc.py"]), git=git)
+    r = tb.execute(ToolCall("0", "compare", {"command": "python3 -c 'import calc; assert calc.add(2, 2) == 4'"}))
+    assert "not changed anything" in r.output
+    tb.execute(ToolCall("1", "str_replace_editor", {"command": "str_replace", "path": "calc.py", "old_str": "a - b", "new_str": "a + b"}))
+    r = tb.execute(ToolCall("2", "compare", {"command": "python3 -c 'import calc; assert calc.add(2, 2) == 4'"}))
+    assert "FIXED by your change" in r.output
+    r = tb.execute(ToolCall("3", "compare", {"command": "python3 -c 'import legacy; assert legacy.X == 2'"}))
+    assert "Fails on BOTH" in r.output
+    assert "a + b" in (repo / "calc.py").read_text()  # restored after the baseline run
+    tb.execute(ToolCall("4", "str_replace_editor", {"command": "str_replace", "path": "calc.py", "old_str": "a + b", "new_str": "a * b"}))
+    r = tb.execute(ToolCall("5", "str_replace_editor", {"command": "str_replace", "path": "calc.py", "old_str": "a * b", "new_str": "a + b"}))
+    assert "going back and forth" in r.output

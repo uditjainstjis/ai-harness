@@ -100,6 +100,20 @@ TOOL_SPECS: List[ToolSpec] = [
         },
     ),
     ToolSpec(
+        name="compare",
+        description=(
+            "Run a command on the ORIGINAL code and on your CURRENT code and compare (your changes are "
+            "temporarily reverted for the first run, then restored). Use it whenever a test fails, to see whether "
+            "the failure is caused by your change or already existed; and to show your reproduction goes from "
+            "failing to passing. Pre-existing failures unrelated to the issue are not yours to fix."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {"command": {"type": "string", "description": "Shell command to run in both states (keep it targeted)."}},
+            "required": ["command"],
+        },
+    ),
+    ToolSpec(
         name="submit",
         description=(
             "Finish the task. The harness then VERIFIES your claims: it runs each verification command on the "
@@ -132,6 +146,7 @@ ALIASES = {
     "finish": "submit", "done": "submit", "complete": "submit",
     "find_symbol": "find_definition", "goto_definition": "find_definition",
     "glob": "find_files",
+    "diff_run": "compare", "compare_runs": "compare", "run_on_original": "compare",
 }
 
 
@@ -170,6 +185,10 @@ def canonicalize(call: ToolCall) -> Optional[ToolCall]:
             args["command"] = "insert"
         else:
             args["command"] = "view"
+    elif name == "compare":
+        for alt in ("cmd", "script"):
+            if alt in args and "command" not in args:
+                args["command"] = args.pop(alt)
     elif name == "find_definition":
         for alt in ("name", "query"):
             if alt in args and "symbol" not in args:
@@ -185,7 +204,8 @@ class ToolResult:
 
 
 class Toolbox:
-    def __init__(self, root: Path, scratch: Path, index: SymbolIndex, command_timeout: int = 180) -> None:
+    def __init__(self, root: Path, scratch: Path, index: SymbolIndex, command_timeout: int = 180, git=None) -> None:
+        self.git = git
         self.root = root
         self.scratch = scratch
         self.index = index
@@ -291,6 +311,46 @@ class Toolbox:
 
     def _t_find_files(self, a: Dict[str, Any]) -> ToolResult:
         return ToolResult(find_files(self.root, a.get("pattern") or "*"))
+
+    def _t_compare(self, a: Dict[str, Any]) -> ToolResult:
+        cmd = str(a.get("command") or "").strip()
+        if not cmd:
+            return ToolResult("command is empty", is_error=True)
+        why = check_denylist(cmd)
+        if why:
+            return ToolResult(f"Command blocked: {why}.", is_error=True)
+        if self.git is None:
+            return self._t_bash({"command": cmd})
+        from ..agent.verify import summarize_output
+
+        timeout = max(5, min(int(a.get("timeout") or self.command_timeout), 900))
+        mine = run_command(cmd, self.root, timeout=timeout, env=dict(self.env, PYTHONDONTWRITEBYTECODE="1"))
+        if not self.git.patch().strip():
+            return ToolResult("(You have not changed anything yet, so both states are identical.)\n" + format_result(mine),
+                              is_error=not mine.ok)
+        try:
+            with self.git.baseline():
+                orig = run_command(cmd, self.root, timeout=timeout, env=dict(self.env, PYTHONDONTWRITEBYTECODE="1"))
+        except Exception as e:  # noqa: BLE001
+            return ToolResult(f"Could not run on the original code ({e}).\n" + format_result(mine), is_error=True)
+        o_ok, m_ok = orig.ok, mine.ok
+        if not o_ok and m_ok:
+            verdict = "FIXED by your change: fails on the original code, passes on yours."
+        elif o_ok and not m_ok:
+            verdict = "REGRESSION: passes on the original code but FAILS with your change. Your change caused this."
+        elif o_ok and m_ok:
+            verdict = "Passes on both (your change does not affect this result)."
+        else:
+            verdict = ("Fails on BOTH: this failure already existed before your change. If it is unrelated to the "
+                       "issue, ignore it - do not try to fix pre-existing failures.")
+        body = (
+            f"ORIGINAL code: {summarize_output(orig.output, orig.exit_code, orig.timed_out)}\n"
+            f"YOUR code:     {summarize_output(mine.output, mine.exit_code, mine.timed_out)}\n=> {verdict}\n\n"
+            f"Output with your code (tail):\n" + "\n".join(mine.output.rstrip().splitlines()[-30:])
+        )
+        if o_ok != m_ok or (not o_ok and not m_ok):
+            body += "\n\nOutput with the original code (tail):\n" + "\n".join(orig.output.rstrip().splitlines()[-15:])
+        return ToolResult(body, is_error=False, meta={"compare": verdict.split(":")[0]})
 
     def _t_submit(self, a: Dict[str, Any]) -> ToolResult:
         cmds = a.get("verification_commands") or a.get("commands") or []

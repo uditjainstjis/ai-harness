@@ -35,6 +35,8 @@ class AttemptResult:
     review: Optional[Dict[str, Any]] = None
     messages: List[Dict[str, Any]] = field(default_factory=list)
     tool_counts: Dict[str, int] = field(default_factory=dict)
+    created_files: List[str] = field(default_factory=list)
+    touched_files: List[str] = field(default_factory=list)
 
     @property
     def strength(self) -> str:
@@ -51,7 +53,7 @@ def _call_key(call: ToolCall) -> str:
 def _brief(call: ToolCall) -> str:
     a = call.arguments or {}
     if call.name == "bash":
-        return str(a.get("command", ""))[:160]
+        return " ⏎ ".join(l.strip() for l in str(a.get("command", "")).splitlines() if l.strip())[:160]
     if call.name == "str_replace_editor":
         extra = ""
         if a.get("view_range"):
@@ -63,6 +65,8 @@ def _brief(call: ToolCall) -> str:
         return str(a.get("symbol", ""))
     if call.name == "find_files":
         return str(a.get("pattern", ""))
+    if call.name == "compare":
+        return " ⏎ ".join(l.strip() for l in str(a.get("command", "")).splitlines() if l.strip())[:150]
     if call.name == "submit":
         return (a.get("summary") or "")[:120]
     return json.dumps(a)[:120]
@@ -127,9 +131,10 @@ class Attempt:
 
     # ------------------------------------------------------------------ model call
     def _call_model(self, messages: List[Dict[str, Any]]):
-        for attempt in range(4):
+        temperature = self.temperature
+        for attempt in range(5):
             try:
-                return self.model.chat(strip_private(messages), tools=self.toolbox.specs(), temperature=self.temperature)
+                return self.model.chat(strip_private(messages), tools=self.toolbox.specs(), temperature=temperature)
             except ContextOverflow:
                 self.events.emit("log", level="warn", message="context overflow: compacting transcript")
                 if compact_hard(messages, keep_recent=max(2, self.keep_recent // 2 - attempt)) == 0 and attempt >= 1:
@@ -140,8 +145,16 @@ class Attempt:
                     raise FatalModelError(msg)
                 if "HTTP 404" in msg and ("model" in msg.lower()):
                     raise FatalModelError(msg)
-                self.events.emit("log", level="warn", message=f"model error (retry {attempt + 1}/4): {msg[:300]}")
-                time.sleep(4 * (attempt + 1))
+                self.events.emit("log", level="warn", message=f"model error (retry {attempt + 1}/5): {msg[:200]}")
+                # Some endpoints fail deterministically on a specific transcript. Identical retries
+                # cannot help there, so each retry perturbs the request a little more.
+                if attempt == 1:
+                    messages.append({"role": "user", "content": "Continue with the task.", "_nudge": True})
+                elif attempt == 2:
+                    compact(messages, keep_recent=2, head=300, tail=200)
+                elif attempt == 3:
+                    temperature = 0.7
+                time.sleep(3 * (attempt + 1))
         return None
 
     # ------------------------------------------------------------------ guards
@@ -235,11 +248,19 @@ class Attempt:
                     else:
                         canon.append(c)
                 resp.tool_calls = canon
-            messages.append(resp.as_message())
-            if unknown:
+            if resp.text or resp.tool_calls:
+                messages.append(resp.as_message())
+            if unknown and not resp.tool_calls:
+                # nothing usable in this turn: one clear note instead of an empty assistant turn + two nudges
                 messages.append({"role": "user", "_nudge": True, "content": (
                     f"You tried to call tool(s) that do not exist: {', '.join(sorted(set(unknown)))}. Available tools: "
-                    "bash, str_replace_editor, search, find_definition, find_files, submit.")})
+                    "bash, str_replace_editor, search, find_definition, find_files, compare, submit. Call one of them.")})
+                no_tool_streak += 1
+                if no_tool_streak >= 3:
+                    stop = "no_tool_calls"
+                    break
+                continue
+            ignored_note = f"(Ignored call(s) to unknown tool(s): {', '.join(sorted(set(unknown)))}.)" if unknown else ""
             self.events.emit("llm", attempt=self.n, step=step, text=resp.text[:2000], n_calls=len(resp.tool_calls),
                              input_tokens=resp.usage.input_tokens, output_tokens=resp.usage.output_tokens,
                              cached_tokens=resp.usage.cached_tokens, latency_s=round(resp.latency_s, 2),
@@ -254,9 +275,11 @@ class Attempt:
             no_tool_streak = 0
             for call in resp.tool_calls:
                 self.events.emit("tool_call", attempt=self.n, step=step, name=call.name, brief=_brief(call), args=call.arguments)
-                if call.name in ("str_replace_editor",) and (call.arguments or {}).get("command") in ("str_replace", "insert", "create"):
-                    self.events.emit("phase", name="fix", attempt=self.n)
-                elif call.name == "bash" and ".pramana/" in str((call.arguments or {}).get("command", "")) and self._edits == 0:
+                args = call.arguments or {}
+                if call.name == "str_replace_editor" and args.get("command") in ("str_replace", "insert", "create"):
+                    scratch_file = ".pramana/" in str(args.get("path", ""))
+                    self.events.emit("phase", name="reproduce" if scratch_file else "fix", attempt=self.n)
+                elif call.name == "bash" and ".pramana/" in str(args.get("command", "")):
                     self.events.emit("phase", name="reproduce", attempt=self.n)
                 res = self.toolbox.execute(call)
                 messages.append({"role": "tool", "tool_call_id": call.id, "name": call.name, "content": res.output})
@@ -268,6 +291,8 @@ class Attempt:
             if self._accepted:
                 stop = "submitted"
                 break
+            if ignored_note:  # after the tool results: tool messages must directly follow their call
+                messages.append({"role": "user", "content": ignored_note, "_nudge": True})
             for note in self._guards():
                 messages.append({"role": "user", "content": note, "_nudge": True})
                 self.events.emit("nudge", attempt=self.n, message=note)
@@ -282,6 +307,8 @@ class Attempt:
                 self.events.emit("verify", attempt=self.n, accepted=v.accepted, strength=v.strength, round=v.round,
                                  checks=[{"command": c.command, "verdict": c.verdict, "origin": c.origin} for c in v.checks])
         self.result.patch = self.toolbox_git_patch()
+        self.result.created_files = list(self.toolbox.editor.created)
+        self.result.touched_files = list(self.toolbox.editor.touched)
         u = Usage()
         u.add(self.model.usage)
         u.input_tokens -= usage0.input_tokens

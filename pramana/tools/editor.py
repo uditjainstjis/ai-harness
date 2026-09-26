@@ -132,6 +132,9 @@ class Editor:
         self.index = index
         self.history: Dict[str, List[Optional[str]]] = {}
         self.touched: List[str] = []  # repo-relative paths written by the agent, in order
+        self.created: List[str] = []  # repo-relative paths the agent deliberately created
+        self.states: Dict[str, List[str]] = {}  # content hashes per file, to detect back-and-forth edits
+        self.oscillations = 0
 
     # ------------------------------------------------------------------ paths
     def resolve(self, path: str, for_write: bool = False) -> Path:
@@ -257,6 +260,8 @@ class Editor:
         err = syntax_error(p, file_text)
         p.write_text(file_text, encoding="utf-8")
         self._record(p, None)
+        if self.rel(p) not in self.created:
+            self.created.append(self.rel(p))
         n = file_text.count("\n") + (0 if file_text.endswith("\n") else 1)
         warn = f"\nWARNING: the new file has a syntax problem:\n{err}" if err else ""
         return f"Created {self.rel(p)} ({n} lines).{warn}"
@@ -305,6 +310,12 @@ class Editor:
             )
         p.write_text(after, encoding="utf-8")
         self._record(p, before)
+        import hashlib
+
+        hist = self.states.setdefault(str(p), [hashlib.sha1(before.encode()).hexdigest()])
+        h = hashlib.sha1(after.encode()).hexdigest()
+        revisit = h in hist[:-1]
+        hist.append(h)
         # snippet around the change
         a_lines, b_lines = before.split("\n"), after.split("\n")
         sm = difflib.SequenceMatcher(a=a_lines, b=b_lines, autojunk=False)
@@ -322,6 +333,11 @@ class Editor:
         msg = f"Edited {self.rel(p)} (+{added} -{removed} lines){' ' + note if note else ''}. Result:\n{snippet}"
         if after_err and before_err:
             msg += f"\nNote: the file was already unparseable before this edit:\n{after_err}"
+        if revisit:
+            self.oscillations += 1
+            msg += ("\nNOTE: this edit returns the file to a version it already had earlier - you are going back and "
+                    "forth. Stop editing and re-think: re-read the issue, and use `compare` to check whether the failure "
+                    "you are chasing already existed before your changes (then it is not yours to fix).")
         return msg
 
     def _tolerant_replace(self, content: str, old_str: str, new_str: str) -> Tuple[Optional[str], str]:

@@ -1,0 +1,1 @@
+{"title": "SemVer pre-release precedence (JavaScript)", "language": "javascript", "test_cmd": "node --test hidden_tests/*.test.js test/*.test.js"}

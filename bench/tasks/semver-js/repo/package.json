@@ -1,0 +1,1 @@
+{"name": "semver-lite", "version": "0.4.0", "main": "src/semver.js", "scripts": {"test": "node --test"}}

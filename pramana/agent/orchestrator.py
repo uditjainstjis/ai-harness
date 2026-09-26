@@ -28,6 +28,7 @@ from .events import Events
 from .loop import Attempt, AttemptResult, FatalModelError
 from .verify import Gate, Verification, render_checks
 
+LOCKFILES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "uv.lock", "Cargo.lock", "go.sum", "composer.lock", "Gemfile.lock"}
 SCRATCH_LIKE = re.compile(r"^(repro|reproduce|reproduction|debug|scratch|tmp|temp|test_repro|test_issue|check_)[\w.-]*\.(py|js|ts|sh|rb|go)$", re.I)
 
 
@@ -133,7 +134,7 @@ class Orchestrator:
                         break
                     git.reset_to_base()
                     ev.emit("log", level="info", message=f"attempt {n}: repository reset to baseline; retrying with lessons from attempt {n - 1}")
-                toolbox = Toolbox(root, scratch, index, command_timeout=cfg.agent.command_timeout_s)
+                toolbox = Toolbox(root, scratch, index, command_timeout=cfg.agent.command_timeout_s, git=git)
                 gate = Gate(root, git, info.files, info.test_file_command, info.test_framework, toolbox.env,
                             timeout_s=cfg.agent.verify_timeout_s, acceptance_cmd=acceptance_cmd,
                             max_rounds=cfg.agent.max_gate_rejections)
@@ -221,17 +222,29 @@ class Orchestrator:
                 shutil.copytree(scratch, dest, dirs_exist_ok=True)
             except Exception:  # noqa: BLE001
                 pass
-        # new root-level scratch-like files (repro.py etc.) are not part of a fix
-        moved = []
+        # Patch hygiene. A new file belongs to the fix only if the agent deliberately created it with the
+        # editor (and it is not a repro/debug script); files that merely appeared while commands ran
+        # (data files, logs, caches) are moved into the bundle. Lockfiles rewritten by installs are restored.
+        best = next((a for a in result.attempts if a.number == result.best), None)
+        created = set(best.created_files) if best else set()
+        touched = set(best.touched_files) if best else set()
+        moved, restored = [], []
         for status, path in git.changed_files():
-            if status == "A" and "/" not in path and SCRATCH_LIKE.match(path):
-                src = root / path
-                (run_dir / "scratch").mkdir(parents=True, exist_ok=True)
-                shutil.move(str(src), str(run_dir / "scratch" / path))
+            name = path.rsplit("/", 1)[-1]
+            if status == "A" and (path not in created or ("/" not in path and SCRATCH_LIKE.match(name))):
+                dest = run_dir / "scratch" / "artifacts" / path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(root / path), str(dest))
                 moved.append(path)
-        if moved:
+            elif status == "M" and path not in touched and name in LOCKFILES:
+                if git.restore(path):
+                    restored.append(path)
+        if moved or restored:
             result.patch = git.patch()
-            self.events.emit("log", level="info", message=f"moved scratch files out of the patch: {', '.join(moved)}")
+            if moved:
+                self.events.emit("log", level="info", message=f"kept out of the patch (side-effect/scratch files): {', '.join(moved[:8])}")
+            if restored:
+                self.events.emit("log", level="info", message=f"restored lockfiles changed by installs: {', '.join(restored)}")
         shutil.rmtree(scratch, ignore_errors=True)
 
 
