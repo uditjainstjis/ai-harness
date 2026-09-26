@@ -1,0 +1,33 @@
+# Pramana configuration. The API key is NEVER stored here or anywhere in the repo:
+# it is read from the AI_API_KEY environment variable at runtime.
+#
+# Environment overrides: AI_PROVIDER, AI_MODEL, AI_BASE_URL, AI_TEMPERATURE, AI_REASONING_EFFORT.
+
+[model]
+# auto = detect from the key prefix (sk-ant- -> Anthropic, AIza -> Gemini, gsk_ -> Groq,
+# sk-or- -> OpenRouter, xai- -> xAI, nvapi- -> NVIDIA, hf_ -> Hugging Face, sk- -> OpenAI, ...).
+provider = "auto"
+# Empty = the provider's default. Set this to the Organising Committee's prescribed model.
+name = ""
+# Only needed for OpenAI-compatible endpoints that are not auto-detected.
+base_url = ""
+temperature = 0.0          # deterministic by default (seeded where the provider supports it)
+max_output_tokens = 8192
+reasoning_effort = ""      # optional: low | medium | high (reasoning models only)
+tool_mode = "auto"         # auto (native tools, falls back to the text protocol) | native | text
+
+[agent]
+max_steps = 60             # tool-using turns per attempt
+max_attempts = 2           # a 2nd attempt only runs when the 1st ends without proof
+max_gate_rejections = 3
+token_budget = 3000000     # hard ceiling per issue (input + output tokens)
+command_timeout_s = 180
+verify_timeout_s = 300
+compact_at_tokens = 60000
+keep_recent_observations = 8
+review = true              # independent reviewer pass before a patch is accepted
+seed = 7
+
+[paths]
+runs_dir = "runs"          # evidence bundles
+workspace_dir = "workspace" # repositories cloned from URLs

@@ -1,0 +1,3 @@
+{"title": "slugify: collapse separators, strip edges, transliterate accents",
+ "language": "python",
+ "test_cmd": "python -m pytest -q hidden_tests tests"}
