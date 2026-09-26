@@ -125,6 +125,15 @@ check excludes `psf/requests`, which needs network access, and `pallets/flask`);
 instances flip between runs — repeated runs of the same 10-instance subset scored 5, 6 and 6 —
 so treat single-instance differences as noise and the rate as approximate.
 
+The same harness scales with the model. Three of those instances were re-run with
+`claude-sonnet` (through the text tool protocol, since that backend has no native tool calling):
+
+| instance | `gpt-oss-120b` | `claude-sonnet` |
+|---|---|---|
+| `sympy__sympy-15345` | failed 3 runs (fixed `Max`, missed `Min`) | **resolved**, verified |
+| `pytest-dev__pytest-10051` | failed 3 runs (worked around the cause) | **resolved**, verified |
+| `django__django-17087` | resolved | **resolved**, verified |
+
 **Bundled benchmark** (`make bench`) — 4 tasks with hidden tests: two Python bug fixes, a
 JavaScript bug fix, and a feature request.
 
