@@ -99,6 +99,8 @@ def build_env(repo: Path, extra: Optional[Dict[str, str]] = None, venv: Optional
             "PIP_DISABLE_PIP_VERSION_CHECK": "1",
             "PIP_NO_INPUT": "1",
             "PYTHONUNBUFFERED": "1",
+            # never leave .pyc files in the user's repository, and never read a stale one
+            "PYTHONDONTWRITEBYTECODE": "1",
             "DEBIAN_FRONTEND": "noninteractive",
         }
     )
