@@ -98,15 +98,31 @@ def extract(issue_text: str, limit: int = 2) -> List[Snippet]:
     return found
 
 
+def _is_test_module(code: str) -> bool:
+    """A snippet that only defines test functions/classes does nothing as a script: run it with pytest."""
+    try:
+        import ast
+
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    defines_tests = any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")
+                        or isinstance(n, ast.ClassDef) and n.name.startswith("Test") for n in tree.body)
+    has_calls = any(isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) for n in tree.body)
+    return defines_tests and not has_calls
+
+
 def run_snippets(root: Path, scratch: Path, env: Dict[str, str], issue_text: str, timeout: int = 45) -> List[Dict[str, str]]:
     results = []
     for i, snip in enumerate(extract(issue_text), 1):
-        name = f"issue_snippet_{i}.py"
+        is_test = _is_test_module(snip.code)
+        name = f"test_issue_snippet_{i}.py" if is_test else f"issue_snippet_{i}.py"
         path = scratch / name
         path.write_text(snip.code + "\n")
-        res = run_command(f"python {name}", scratch, timeout=timeout, env=env, max_chars=4000)
+        cmd = f"python -m pytest -q -rA -p no:cacheprovider {name}" if is_test else f"python {name}"
+        res = run_command(cmd, scratch, timeout=timeout, env=env, max_chars=4000)
         results.append({"file": f".pramana/{name}", "code": snip.code, "output": format_result(res),
-                        "exit_code": "timeout" if res.timed_out else str(res.exit_code)})
+                        "command": cmd, "exit_code": "timeout" if res.timed_out else str(res.exit_code)})
     return results
 
 
@@ -116,7 +132,7 @@ def render(results: List[Dict[str, str]]) -> str:
     parts = ["\n<issue_code_run_by_harness>",
              "The harness extracted the code from the issue and ran it on the ORIGINAL code (cwd .pramana/):"]
     for r in results:
-        parts.append(f"$ python {r['file']}\n{r['output']}")
+        parts.append(f"$ (cd .pramana && {r.get('command', 'python ' + r['file'])})\n{r['output']}")
     parts.append("Use this as a starting point for your reproduction (the file is already in .pramana/). It may "
                  "not show the bug by itself (e.g. it only prints values) - check it against the expected behaviour.")
     parts.append("</issue_code_run_by_harness>\n")

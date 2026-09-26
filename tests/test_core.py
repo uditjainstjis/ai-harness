@@ -274,3 +274,20 @@ def test_view_range_spellings_and_unknown_arg_note(tmp_path):
         assert "lines 500-505" in r.output and "x500 = 500" in r.output, args
     r = tb.execute(ToolCall("u", "search", {"pattern": "x77 =", "max_results": 3}))
     assert "Ignored unknown argument(s) for `search`: max_results" in r.output
+
+
+def test_issue_condensing_and_test_style_snippets(tmp_path):
+    from pramana.repo import snippets
+    from pramana.repo.issue import condense
+
+    pip_list = "\n".join(f"package{i}   1.{i}.0" for i in range(80))
+    text = "Bug in xfail\n\nprose stays\n```\n" + "\n".join(f"log line {i}" for i in range(400)) + "\n```\n" + pip_list
+    out = condense(text)
+    assert "prose stays" in out and "lines of output elided" in out and "lines of package list elided" in out
+    assert len(out) < len(text) / 3
+    repo = make_repo(tmp_path, {"lib.py": "def f():\n    return 1\n"})
+    scratch = repo / ".pramana"
+    scratch.mkdir()
+    code = "```python\nfrom lib import f\n\ndef test_f():\n    assert f() == 2\n```"
+    runs = snippets.run_snippets(repo, scratch, build_env(repo), code)
+    assert runs and "pytest" in runs[0]["command"]

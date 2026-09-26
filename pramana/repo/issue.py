@@ -27,7 +27,7 @@ class Issue:
     comments: List[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
-    def render(self, max_chars: int = 24000) -> str:
+    def render(self, max_chars: int = 16000) -> str:
         parts = []
         head = f"#{self.number} " if self.number else ""
         parts.append(f"Title: {head}{self.title}".rstrip())
@@ -42,10 +42,47 @@ class Issue:
             for c in self.comments:
                 parts.append(c.strip())
                 parts.append("---")
-        text = "\n".join(parts)
+        text = condense("\n".join(parts))
         if len(text) > max_chars:
             text = text[:max_chars] + "\n[... issue text truncated ...]"
         return text
+
+
+FENCE_BLOCK_RE = re.compile(r"(```[^\n]*\n)(.*?)(```)", re.S)
+PKG_LINE_RE = re.compile(r"^\s*[A-Za-z0-9_.\-\[\]]+\s+v?\d+(\.[\w\-+]+)*\s*$")
+
+
+def _elide_lines(lines, keep_head: int, keep_tail: int, what: str):
+    if len(lines) <= keep_head + keep_tail + 4:
+        return lines
+    return lines[:keep_head] + [f"[... {len(lines) - keep_head - keep_tail} lines of {what} elided by the harness ...]"] + lines[-keep_tail:]
+
+
+def condense(text: str, block_limit: int = 1800) -> str:
+    """Keep the issue's prose and short code intact; shorten long pasted outputs (package lists, logs,
+    huge tracebacks) to head + tail. They are re-sent on every model turn."""
+    def shrink_block(m):
+        body = m.group(2)
+        if len(body) <= block_limit:
+            return m.group(0)
+        lines = body.split("\n")
+        pkg = sum(1 for l in lines if PKG_LINE_RE.match(l))
+        what = "package list" if pkg > len(lines) * 0.5 else "output"
+        return m.group(1) + "\n".join(_elide_lines(lines, 25, 15, what)) + "\n" + m.group(3)
+
+    text = FENCE_BLOCK_RE.sub(shrink_block, text)
+    # unfenced runs of `package version` lines (pip list / pip freeze pasted without a fence)
+    out, run = [], []
+    for line in text.split("\n") + [None]:
+        if line is not None and PKG_LINE_RE.match(line):
+            run.append(line)
+            continue
+        if run:
+            out.extend(_elide_lines(run, 3, 2, "package list") if len(run) > 12 else run)
+            run = []
+        if line is not None:
+            out.append(line)
+    return "\n".join(out)
 
 
 def _gh_headers() -> dict:
