@@ -10,3 +10,4 @@ workspace/
 .DS_Store
 build/
 dist/
+/.claude/
