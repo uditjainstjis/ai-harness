@@ -109,6 +109,8 @@ class LLMResponse:
         msg: Dict[str, Any] = {"role": "assistant", "content": self.text or ""}
         if self.tool_calls:
             msg["tool_calls"] = [tc.as_dict() for tc in self.tool_calls]
+        if self.reasoning:
+            msg["reasoning"] = self.reasoning[:6000]
         return msg
 
 

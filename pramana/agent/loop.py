@@ -181,7 +181,7 @@ class Attempt:
             tag = f"editfail:{path}:{n // 3}"
             if n >= 3 and tag not in self._nudged:
                 self._nudged.add(tag)
-                notes.append(prompts.EDIT_FAIL_NUDGE.format(n=n, path=path))
+                notes.append(prompts.EDIT_FAIL_NUDGE.format(n=n, path=path or "(no path given - always pass path)"))
         if self._edits == 0 and self._step >= max(8, int(self.max_steps * 0.5)) and "noedit" not in self._nudged:
             self._nudged.add("noedit")
             notes.append(prompts.NO_EDIT_NUDGE.format(used=self._step, total=self.max_steps))

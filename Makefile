@@ -1,7 +1,8 @@
 # Pramana - standard evaluation interface
 #   make setup   install dependencies into ./.venv
 #   make run     launch the harness (interactive; or: make run REPO=<path|url> ISSUE=<url|file|text> TEST="<cmd>")
-#   make test    unit tests + (if AI_API_KEY is set) the bundled end-to-end benchmark
+#   make test    unit tests + (if AI_API_KEY is set) a quick end-to-end run on 2 bundled tasks with hidden tests
+#   make bench   the full bundled benchmark (4 tasks, Python + JavaScript, bug fixes + a feature)
 #   make clean   remove generated artefacts
 # The API key is read from the environment (AI_API_KEY) and never stored in the repository.
 
@@ -13,7 +14,7 @@ PRAMANA := $(BIN)/pramana
 .PHONY: setup run test clean doctor bench help
 
 help:
-	@sed -n '2,6p' Makefile
+	@sed -n '2,7p' Makefile
 
 setup:
 	@bash scripts/setup.sh
@@ -26,7 +27,7 @@ test:
 	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
 	@$(BIN)/python -m pytest -q tests
 	@if [ -n "$(AI_API_KEY)" ]; then \
-		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) bench --suite mini --plain; \
+		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) bench --suite quick --plain; \
 	else \
 		echo "AI_API_KEY is not set: skipped the end-to-end benchmark (unit tests only)."; \
 	fi

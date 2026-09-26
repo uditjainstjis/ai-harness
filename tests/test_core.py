@@ -213,3 +213,28 @@ def test_compare_tool_and_oscillation(tmp_path):
     tb.execute(ToolCall("4", "str_replace_editor", {"command": "str_replace", "path": "calc.py", "old_str": "a + b", "new_str": "a * b"}))
     r = tb.execute(ToolCall("5", "str_replace_editor", {"command": "str_replace", "path": "calc.py", "old_str": "a * b", "new_str": "a + b"}))
     assert "going back and forth" in r.output
+
+
+def test_issue_snippets_extracted_and_run(tmp_path):
+    from pramana.repo import snippets
+
+    text = ("Bug\n```python\nfrom mathy import half\nprint(half(3))\n```\nand in the REPL:\n"
+            "```\n>>> from mathy import half\n>>> half(5)\n2\n```\n```\nTraceback (most recent call last):\n  x\n```")
+    found = snippets.extract(text)
+    assert len(found) == 2 and "print(repr(half(5)))" in found[1].code
+    repo = make_repo(tmp_path, {"mathy.py": "def half(x):\n    return x // 2\n"})
+    scratch = repo / ".pramana"
+    scratch.mkdir()
+    from pramana.tools.shell import ensure_python_shim
+
+    runs = snippets.run_snippets(repo, scratch, ensure_python_shim(build_env(repo), scratch / ".bin"), text)
+    assert runs[0]["exit_code"] == "0" and "1" in runs[0]["output"]
+    assert "2" in runs[1]["output"]
+
+
+def test_text_protocol_nested_array_items():
+    text = ('<tool name="submit">\n<summary>fixed</summary>\n<verification_commands>\n'
+            '<command>python .pramana/repro.py</command>\n<command>python -m pytest -q tests</command>\n'
+            '</verification_commands>\n</tool>')
+    _, calls = parse_text_tool_calls(text, TOOL_SPECS)
+    assert calls[0].arguments["verification_commands"] == ["python .pramana/repro.py", "python -m pytest -q tests"]

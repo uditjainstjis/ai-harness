@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -10,7 +11,7 @@ from ..llm.base import ToolCall, ToolSpec
 from ..repo.symbols import SymbolIndex
 from .editor import EditError, Editor
 from .search import find_files, search
-from .shell import build_env, check_denylist, format_result, run_command
+from .shell import build_env, check_denylist, ensure_python_shim, format_result, run_command
 
 TOOL_SPECS: List[ToolSpec] = [
     ToolSpec(
@@ -138,6 +139,7 @@ TOOL_SPECS: List[ToolSpec] = [
 ]
 
 TOOL_NAMES = {t.name for t in TOOL_SPECS}
+FULL_SUITE_RE = re.compile(r"^(python3? -m )?(pytest|py\.test)(\s+(-q|-qq|-x|-v|-vv|-rA|-ra|-s|--tb=\w+))*\s*$|^(npm|yarn|pnpm) (run )?test\s*$|^go test \./\.\.\.\s*$|^cargo test\s*$")
 ALIASES = {
     "execute_bash": "bash", "run": "bash", "shell": "bash", "run_command": "bash", "terminal": "bash",
     "editor": "str_replace_editor", "edit": "str_replace_editor", "str_replace_based_edit_tool": "str_replace_editor",
@@ -211,7 +213,7 @@ class Toolbox:
         self.index = index
         self.editor = Editor(root, scratch, index)
         self.command_timeout = command_timeout
-        self.env = build_env(root, extra={"PRAMANA_SCRATCH": str(scratch)})
+        self.env = ensure_python_shim(build_env(root, extra={"PRAMANA_SCRATCH": str(scratch)}), scratch / ".bin")
         self.commands: List[Dict[str, Any]] = []
         self.on_submit: Optional[Callable[[Dict[str, Any]], ToolResult]] = None
 
@@ -258,7 +260,12 @@ class Toolbox:
         timeout = max(5, min(timeout, 900))
         res = run_command(cmd, self.root, timeout=timeout, env=self.env)
         self.commands.append({"command": cmd, "exit_code": res.exit_code, "timed_out": res.timed_out, "duration_s": round(res.duration_s, 2)})
-        return ToolResult(format_result(res), is_error=not res.ok, meta={"exit_code": res.exit_code, "timed_out": res.timed_out})
+        out = format_result(res)
+        if not res.ok and FULL_SUITE_RE.match(cmd.strip()):
+            out += ("\n\n[harness note] You ran the ENTIRE test suite. Failures here are often pre-existing or "
+                    "environment-specific. Before acting on one, run that specific test with `compare` to see if it "
+                    "also fails on the original code; only regressions you caused need fixing.")
+        return ToolResult(out, is_error=not res.ok, meta={"exit_code": res.exit_code, "timed_out": res.timed_out})
 
     def _t_str_replace_editor(self, a: Dict[str, Any]) -> ToolResult:
         cmd = (a.get("command") or "").strip()
@@ -360,7 +367,17 @@ class Toolbox:
                 cmds = parsed if isinstance(parsed, list) else [cmds]
             except ValueError:
                 cmds = [c for c in cmds.splitlines() if c.strip()]
-        payload = {"summary": a.get("summary") or a.get("message") or "", "verification_commands": [str(c) for c in cmds if str(c).strip()]}
+        cleaned = []
+        for c in cmds:
+            c = str(c).strip()
+            m = re.fullmatch(r"<([A-Za-z_][\w\-]*)>(.*)</\1>", c, re.S)  # stray wrapper tag from text-mode models
+            if m:
+                c = m.group(2).strip()
+            if c.startswith("$ "):
+                c = c[2:]
+            if c:
+                cleaned.append(c)
+        payload = {"summary": a.get("summary") or a.get("message") or "", "verification_commands": cleaned}
         if self.on_submit is None:
             return ToolResult("Submitted.", meta={"submitted": True, **payload})
         return self.on_submit(payload)

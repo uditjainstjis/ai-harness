@@ -74,6 +74,8 @@ def grade(task_dir: Path, repo: Path, spec: Dict[str, Any]) -> Dict[str, Any]:
 def run_bench(cfg: Config, suite: str = "mini", only: Optional[List[str]] = None, plain: bool = True) -> int:
     tasks_dir = ROOT / "bench" / "tasks"
     tasks = sorted(d for d in tasks_dir.iterdir() if (d / "task.json").exists()) if tasks_dir.exists() else []
+    if suite == "quick" and not only:
+        only = ["slugify", "semver-js"]  # one Python, one JavaScript: a fast end-to-end smoke test
     if only:
         tasks = [t for t in tasks if t.name in only]
     if not tasks:

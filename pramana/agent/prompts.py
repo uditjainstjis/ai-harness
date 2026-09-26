@@ -40,7 +40,7 @@ INITIAL_TEMPLATE = """<issue>
 Deterministic ranking of likely-relevant code (a starting point - verify it, don't trust it blindly):
 {hints}
 </localization_hints>
-{acceptance}{lessons}
+{snippets}{acceptance}{lessons}
 Start by localizing the code responsible for this issue."""
 
 ACCEPTANCE_TEMPLATE = """
@@ -103,11 +103,13 @@ Reply with one line of JSON and nothing else:
 Only say "revise" for a concrete defect you can name; stylistic preferences are not defects."""
 
 
-def build_initial(issue: str, overview: str, hints: str, acceptance_cmd: Optional[str], lessons: Optional[str]) -> str:
+def build_initial(issue: str, overview: str, hints: str, acceptance_cmd: Optional[str], lessons: Optional[str],
+                  snippets: str = "") -> str:
     return INITIAL_TEMPLATE.format(
         issue=issue,
         overview=overview,
         hints=hints,
+        snippets=snippets,
         acceptance=ACCEPTANCE_TEMPLATE.format(cmd=acceptance_cmd) if acceptance_cmd else "",
         lessons=LESSONS_TEMPLATE.format(lessons=lessons) if lessons else "",
     )

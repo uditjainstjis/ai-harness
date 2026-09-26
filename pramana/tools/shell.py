@@ -108,6 +108,27 @@ def build_env(repo: Path, extra: Optional[Dict[str, str]] = None, venv: Optional
     return env
 
 
+def ensure_python_shim(env: Dict[str, str], shim_dir: Path) -> Dict[str, str]:
+    """Many systems only ship `python3`; models (and READMEs) say `python`. Bridge the gap."""
+    import shutil as _sh
+
+    if _sh.which("python", path=env.get("PATH")):
+        return env
+    py3 = _sh.which("python3", path=env.get("PATH"))
+    if not py3:
+        return env
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    link = shim_dir / "python"
+    if not link.exists():
+        try:
+            link.symlink_to(py3)
+        except OSError:
+            return env
+    env = dict(env)
+    env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
+    return env
+
+
 def clean_output(text: str) -> str:
     text = ANSI_RE.sub("", text)
     # collapse carriage-return progress bars to their final state

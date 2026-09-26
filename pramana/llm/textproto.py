@@ -87,6 +87,10 @@ def _coerce(value: str, spec: Dict[str, Any]) -> Any:
         if typ == "array":
             if v.startswith("["):
                 return json.loads(v)
+            # models often wrap each element in its own tag: <item>a</item><command>b</command>
+            inner = re.findall(r"<([A-Za-z_][\w\-]*)>(.*?)</\1>", v, re.S)
+            if inner:
+                return [_strip_one_newline(x).strip() for _, x in inner if x.strip()]
             return [x for x in (s.strip() for s in v.splitlines()) if x]
         if typ == "object":
             return json.loads(v)

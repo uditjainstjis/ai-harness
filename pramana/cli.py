@@ -133,16 +133,40 @@ def solve_once(cfg: Config, repo_spec: str, issue_spec: str, acceptance: Optiona
     return res
 
 
+def preflight(cfg: Config) -> bool:
+    """One tiny model call so a bad key / model name fails in seconds, not after repo intake."""
+    from .llm import build_model
+
+    with console.status("[dim]checking the model connection...[/]"):
+        try:
+            model = build_model(cfg)
+            resp = model.chat([{"role": "user", "content": "Reply with the single word: ready"}], tools=None)
+        except Exception as e:  # noqa: BLE001
+            console.print(f"[red]model check failed:[/] {str(e)[:400]}")
+            console.print("[dim]Check AI_API_KEY (and AI_MODEL / AI_BASE_URL or pramana.toml if the provider is not auto-detected).[/]")
+            return False
+    console.print(f"[green]✓[/] model reachable in {resp.latency_s:.1f}s")
+    return True
+
+
 def cmd_run(args) -> int:
     cfg = load_config(_overrides(args))
     banner(cfg)
+    if not getattr(args, "skip_preflight", False) and not preflight(cfg):
+        return 2
     interactive = sys.stdin.isatty() and not args.issue
     if not interactive:
         issue_spec = args.issue or sys.stdin.read()
         if not issue_spec.strip():
             console.print("[red]No issue given (pass --issue or pipe the issue text on stdin).[/]")
             return 2
-        res = solve_once(cfg, args.repo or os.environ.get("REPO", ""), issue_spec, args.test, plain=args.plain)
+        try:
+            res = solve_once(cfg, args.repo or os.environ.get("REPO", ""), issue_spec, args.test, plain=args.plain)
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except Exception as e:  # noqa: BLE001 - never show a raw traceback to an operator
+            console.print(f"[red]error:[/] {type(e).__name__}: {str(e)[:500]}")
+            return 2
         return _exit_code(res)
     last_repo = args.repo or os.environ.get("REPO", "")
     while True:
@@ -188,7 +212,11 @@ def cmd_solve(args) -> int:
     if not args.issue:
         console.print("[red]--issue is required[/]")
         return 2
-    res = solve_once(cfg, args.repo or "", args.issue, args.test, plain=args.plain)
+    try:
+        res = solve_once(cfg, args.repo or "", args.issue, args.test, plain=args.plain)
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]error:[/] {type(e).__name__}: {str(e)[:500]}")
+        return 2
     if args.json:
         print(json.dumps({"status": res.status, "run_dir": str(res.run_dir), "tokens": res.usage.total_tokens,
                           "elapsed_s": res.elapsed_s}))
@@ -266,6 +294,7 @@ def main(argv=None) -> int:
         p.add_argument("--attempts", type=int)
         p.add_argument("--no-review", action="store_true", dest="no_review")
         p.add_argument("--plain", action="store_true", help="plain log output instead of the live view")
+        p.add_argument("--skip-preflight", action="store_true", dest="skip_preflight", help="skip the startup model check")
 
     p_run = sub.add_parser("run", help="interactive session (make run)")
     common(p_run)

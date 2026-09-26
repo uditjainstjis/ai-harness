@@ -249,6 +249,13 @@ class Editor:
 
     def create(self, path: str, file_text: str) -> str:
         p = self.resolve(path, for_write=True)
+        in_scratch = str(p).startswith(str(self.scratch) + os.sep)
+        if p.exists() and in_scratch and p.is_file():
+            # scratch files are throwaway: overwriting them is harmless and saves a step
+            old = p.read_text(encoding="utf-8", errors="replace")
+            p.write_text(file_text or "", encoding="utf-8")
+            self._record(p, old)
+            return f"Overwrote scratch file {self.rel(p)} ({(file_text or '').count(chr(10)) + 1} lines)."
         if p.exists():
             raise EditError(
                 f"{self.rel(p)} already exists. Use command=str_replace to change it "

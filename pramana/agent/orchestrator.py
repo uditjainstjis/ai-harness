@@ -110,12 +110,29 @@ class Orchestrator:
             ev.emit("intake", summary=info.summary(), files=len(info.files), language=info.primary_language,
                     test_command=info.test_command, notes=info.env_notes)
 
+            # ---------------------------------------------------------- zero-token reproduction
+            issue_text = issue.render()
+            snippet_block, snippet_out = "", ""
+            if info.primary_language == "Python":
+                from ..repo import snippets
+                from ..tools.shell import build_env
+
+                ev.emit("phase", name="reproduce")
+                from ..tools.shell import ensure_python_shim
+
+                runs = snippets.run_snippets(root, scratch, ensure_python_shim(build_env(root), scratch / ".bin"), issue_text)
+                if runs:
+                    snippet_block = snippets.render(runs)
+                    snippet_out = "\n".join(r["output"] for r in runs)
+                    for r in runs:
+                        last = [l for l in r["output"].splitlines() if l.strip()][-1:] or [""]
+                        ev.emit("snippet", file=r["file"], exit_code=r["exit_code"], last_line=last[0][:160])
+
             # ---------------------------------------------------------- localize
             ev.emit("phase", name="localize")
             index = SymbolIndex(root, info.files)
-            issue_text = issue.render()
             t0 = time.time()
-            src, tests = Localizer(root, info.files, index).localize(issue_text)
+            src, tests = Localizer(root, info.files, index).localize(issue_text + "\n" + snippet_out)
             hints = Localizer.render(src, tests)
             result.hints = hints
             ev.emit("localized", hints=hints, seconds=round(time.time() - t0, 2), top=[c.path for c in src[:5]])
@@ -138,7 +155,7 @@ class Orchestrator:
                 gate = Gate(root, git, info.files, info.test_file_command, info.test_framework, toolbox.env,
                             timeout_s=cfg.agent.verify_timeout_s, acceptance_cmd=acceptance_cmd,
                             max_rounds=cfg.agent.max_gate_rejections)
-                initial = prompts.build_initial(issue_text, info.overview, hints, acceptance_cmd, lessons)
+                initial = prompts.build_initial(issue_text, info.overview, hints, acceptance_cmd, lessons, snippet_block)
                 temp = cfg.model.temperature if n == 1 else max(cfg.model.temperature, 0.6)
                 attempt = Attempt(
                     n, self.model, toolbox, gate, ev, system, initial, cfg.agent.max_steps, budget_left,
@@ -219,7 +236,7 @@ class Orchestrator:
         if scratch.exists():
             dest = run_dir / "scratch"
             try:
-                shutil.copytree(scratch, dest, dirs_exist_ok=True)
+                shutil.copytree(scratch, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".bin", "__pycache__"))
             except Exception:  # noqa: BLE001
                 pass
         # Patch hygiene. A new file belongs to the fix only if the agent deliberately created it with the

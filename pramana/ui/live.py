@@ -68,6 +68,8 @@ class LiveView:
             line = Text(f"intake: {d.get('language')} · {d.get('files')} files · tests: {d.get('test_command') or '?'}", style="cyan")
             for n in d.get("notes") or []:
                 self._push(Text(f"  note: {n}", style="yellow"))
+        elif kind == "snippet":
+            line = Text(f"issue code run on the original: {d.get('file')} → exit {d.get('exit_code')}: {d.get('last_line', '')[:100]}", style="cyan")
         elif kind == "localized":
             self.hints = d.get("top") or []
             line = Text(f"localized in {d.get('seconds')}s → " + ", ".join(self.hints[:3]), style="cyan")

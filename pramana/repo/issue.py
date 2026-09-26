@@ -139,6 +139,9 @@ def ensure_repo(spec: str, workspace: Path, ref: str = "") -> Path:
     if p.exists():
         return p.resolve()
     url = spec
+    looks_remote = spec.startswith(("http://", "https://", "git@", "ssh://")) or re.fullmatch(r"[\w.-]+/[\w.-]+", spec)
+    if not looks_remote:
+        raise FileNotFoundError(f"repository path does not exist: {spec}")
     if re.fullmatch(r"[\w.-]+/[\w.-]+", spec):
         url = f"https://github.com/{spec}.git"
     m = re.search(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", url)
