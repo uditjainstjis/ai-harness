@@ -128,13 +128,16 @@ so treat single-instance differences as noise and the rate as approximate.
 **Bundled benchmark** (`make bench`) — 4 tasks with hidden tests: two Python bug fixes, a
 JavaScript bug fix, and a feature request.
 
-| model | resolved | tokens |
-|---|---|---|
-| `gpt-oss-120b` (native tool calling) | **4/4** | 296k |
-| `gemma4` (different family) | **4/4** | 487k |
-| `gemma4`, forced into the **text** tool protocol | **1/1** (`slugify`) | 81k |
+| model | tool calling | resolved | tokens | wall |
+|---|---|---|---|---|
+| `claude-sonnet` | text protocol | **4/4** | 335k | 439s |
+| `gpt-oss-120b` | native | **4/4** | 296k | 616s |
+| `gemma4` | native | **4/4** | 487k | 306s |
+| `gemma4` | forced text protocol | **1/1** (`slugify`) | 81k | 92s |
 
-The harness is not tuned to one model family or one tool-calling style.
+Three model families, both tool-calling styles, same harness and same tasks. On the Claude run the
+blind independent test writer produced a passing regression test for all four tasks, each one
+failing on the original code and passing on the patch.
 
 **Offline tests** (`make test`, no API key): 37 tests. Unit coverage for the editor's tolerant
 matching, lint gate and CRLF/BOM preservation; the submit gate's fail→pass / regression
