@@ -20,7 +20,7 @@ from .base import (
     ToolsUnsupported,
     Usage,
 )
-from .textproto import parse_text_tool_calls, to_text_messages
+from .textproto import MAX_TEXT_CALLS_PER_TURN, parse_text_tool_calls, to_text_messages, truncate_hallucination
 
 __all__ = [
     "ChatModel",
@@ -68,10 +68,18 @@ class ChatModel:
             self._account(resp)
             return resp
         wire = to_text_messages(messages, tools) if tools else messages
+        if tools and hasattr(self.backend, "text_mode_stops"):
+            from .textproto import TEXT_STOP_SEQUENCES
+
+            self.backend.text_mode_stops = TEXT_STOP_SEQUENCES
         resp = self.backend.chat(wire, tools=None, temperature=temperature)
+        if hasattr(self.backend, "text_mode_stops"):
+            self.backend.text_mode_stops = []
         if tools:
+            # drop anything the model "imagined" after its calls (fake results, the user's side)
+            resp.text = truncate_hallucination(resp.text)
             prose, calls = parse_text_tool_calls(resp.text, tools)
-            resp.tool_calls = calls
+            resp.tool_calls = calls[:MAX_TEXT_CALLS_PER_TURN]
             # keep the raw text (including tool blocks) as the assistant content so the
             # transcript the model sees next turn is exactly what it wrote
         self._account(resp)

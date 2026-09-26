@@ -28,6 +28,23 @@ _HERMES_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*(?:</tool_call>|\Z)", re.S)
 _QWEN_RE = re.compile(r"<function=([\w.\-]+)>(.*?)(?:</function>|\Z)", re.S)
 _QWEN_PARAM_RE = re.compile(r"<parameter=([\w\-]+)>(.*?)(?:</parameter>|(?=<parameter=)|\Z)", re.S)
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.S)
+_INVOKE_RE = re.compile(r"<invoke\s+name\s*=\s*[\"']?([\w.\-]+)[\"']?\s*>(.*?)(?:</invoke>|\Z)", re.S)
+_NAMED_PARAM_RE = re.compile(r"<parameter\s+name\s*=\s*[\"']?([\w\-]+)[\"']?\s*>(.*?)(?:</parameter>|(?=<parameter\s)|\Z)", re.S)
+# a model writing its own tool results is hallucinating: everything from here on is discarded
+HALLUCINATED_RESULT_RE = re.compile(r"<(result|tool_result|function_results|output|observation)\b[^>]*>|^=== USER ===", re.M)
+MAX_TEXT_CALLS_PER_TURN = 5
+TEXT_STOP_SEQUENCES = ["<tool_result", "<function_results", "<result>", "=== USER ==="]
+
+
+def truncate_hallucination(text: str) -> str:
+    """Keep the reply only up to the first self-written tool result (if a call precedes it)."""
+    m = HALLUCINATED_RESULT_RE.search(text or "")
+    if not m:
+        return text
+    head = text[: m.start()]
+    if re.search(r"<tool\s+name|<invoke\s+name|<function=|<tool_call>", head):
+        return head.rstrip()
+    return text
 
 
 def render_tools_prompt(tools: List[ToolSpec]) -> str:
@@ -39,9 +56,11 @@ def render_tools_prompt(tools: List[ToolSpec]) -> str:
         "<PARAMETER_NAME>value</PARAMETER_NAME>",
         "</tool>",
         "",
-        "Rules: values are raw text (no quotes, no escaping; multi-line is fine). You may call several",
-        "tools in one reply; they run in order. After your tool block(s), STOP and wait: results arrive",
-        "in the next message inside <tool_result> blocks. Never invent tool results yourself.",
+        "Rules: values are raw text (no quotes, no escaping; multi-line is fine). Make ONE tool call per",
+        "reply (you may batch a few independent read-only calls such as several views/searches). After your",
+        "tool block(s), STOP your reply immediately: the harness runs the tools and sends the real results",
+        "in the next message inside <tool_result> blocks. NEVER write <tool_result>/<result> blocks or",
+        "guess what a tool returns; anything you write after your tool calls is discarded.",
         "",
         "# Available tools",
     ]
@@ -117,8 +136,13 @@ def parse_text_tool_calls(text: str, tools: Optional[List[ToolSpec]] = None) -> 
         name, body = m.group(1), m.group(2)
         props = _schema_for(name, tools)
         args: Dict[str, Any] = {}
+        for pm in _NAMED_PARAM_RE.finditer(body):
+            key, val = pm.group(1), _strip_one_newline(pm.group(2))
+            args[key] = _coerce(val, props.get(key, {})) if key in props else val
         for pm in _PARAM_RE.finditer(body):
             key, val = pm.group(1), _strip_one_newline(pm.group(2))
+            if key == "parameter" or key in args:
+                continue
             args[key] = _coerce(val, props.get(key, {})) if key in props else val
         if not args and body.strip().startswith("{"):
             try:
@@ -127,6 +151,17 @@ def parse_text_tool_calls(text: str, tools: Optional[List[ToolSpec]] = None) -> 
                 pass
         calls.append(ToolCall(id=new_call_id("txt"), name=name, arguments=args, raw_arguments=body))
         first_pos = m.start() if first_pos is None else first_pos
+
+    if not calls:
+        for m in _INVOKE_RE.finditer(text):
+            name, body = m.group(1), m.group(2)
+            props = _schema_for(name, tools)
+            args = {}
+            for pm in _NAMED_PARAM_RE.finditer(body):
+                key, val = pm.group(1), _strip_one_newline(pm.group(2))
+                args[key] = _coerce(val, props.get(key, {})) if key in props else val
+            calls.append(ToolCall(id=new_call_id("txt"), name=name, arguments=args, raw_arguments=body))
+            first_pos = m.start() if first_pos is None else first_pos
 
     if not calls:
         for m in _QWEN_RE.finditer(text):

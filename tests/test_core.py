@@ -238,3 +238,28 @@ def test_text_protocol_nested_array_items():
             '</verification_commands>\n</tool>')
     _, calls = parse_text_tool_calls(text, TOOL_SPECS)
     assert calls[0].arguments["verification_commands"] == ["python .pramana/repro.py", "python -m pytest -q tests"]
+
+
+def test_text_protocol_invoke_style_and_hallucination_cut():
+    from pramana.llm.textproto import truncate_hallucination
+
+    text = ('I will look.\n<function_calls>\n<invoke name="bash">\n<parameter name="command">ls -la</parameter>\n</invoke>\n'
+            '</function_calls>\n<result>\nfile_a\n</result>\n<tool name="bash">\n<parameter name="command">rm x</parameter>\n</tool>')
+    cut = truncate_hallucination(text)
+    assert "<result>" not in cut and "rm x" not in cut
+    _, calls = parse_text_tool_calls(cut, TOOL_SPECS)
+    assert len(calls) == 1 and calls[0].name == "bash" and calls[0].arguments == {"command": "ls -la"}
+    _, calls = parse_text_tool_calls('<tool name="bash">\n<parameter name="command">pwd</parameter>\n</tool>', TOOL_SPECS)
+    assert calls[0].arguments == {"command": "pwd"}
+
+
+def test_canonicalize_editor_subcommands_and_arg_inference():
+    c = canonicalize(ToolCall("1", "create", {"path": ".pramana/r.py", "content": "print(1)"}))
+    assert c.name == "str_replace_editor" and c.arguments["command"] == "create" and c.arguments["file_text"] == "print(1)"
+    c = canonicalize(ToolCall("2", "functions.bash", {"command": "ls"}))
+    assert c.name == "bash"
+    c = canonicalize(ToolCall("3", "apply_patch_tool", {"path": "a.py", "old_str": "x", "new_str": "y"}))
+    assert c.name == "str_replace_editor" and c.arguments["command"] == "str_replace"
+    c = canonicalize(ToolCall("4", "open_file", {"path": "a.py", "start_line": 5, "end_line": 9}))
+    assert c.arguments == {"path": "a.py", "command": "view", "view_range": [5, 9]}
+    assert canonicalize(ToolCall("5", "weather", {"city": "Delhi"})) is None

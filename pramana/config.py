@@ -89,14 +89,14 @@ class ModelConfig:
 
 @dataclass
 class AgentConfig:
-    max_steps: int = 60
+    max_steps: int = 45
     max_attempts: int = 2
     max_gate_rejections: int = 3
     token_budget: int = 3_000_000  # hard ceiling across all attempts (input + output)
     command_timeout_s: int = 180
     verify_timeout_s: int = 300
-    compact_at_tokens: int = 60000  # compact old tool output past this prompt size
-    keep_recent_observations: int = 8
+    compact_at_tokens: int = 28000  # compact old tool output past this prompt size
+    keep_recent_observations: int = 6
     review: bool = True  # independent reviewer pass on the final diff
     seed: int = 7
 

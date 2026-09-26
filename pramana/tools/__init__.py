@@ -152,17 +152,64 @@ ALIASES = {
 }
 
 
+EDITOR_SUBCOMMANDS = {
+    "create": "create", "create_file": "create", "write_file": "create", "new_file": "create", "write": "create",
+    "str_replace": "str_replace", "replace": "str_replace", "edit_file": "str_replace", "replace_in_file": "str_replace",
+    "apply_edit": "str_replace", "insert": "insert", "insert_lines": "insert", "undo_edit": "undo_edit", "undo": "undo_edit",
+    "view": "view", "read_file": "view", "open_file": "view", "view_file": "view", "cat": "view",
+}
+NAMESPACE_PREFIXES = ("functions.", "function.", "tools.", "tool.", "tool:", "default_api.")
+
+
+def _infer_from_args(args: Dict[str, Any]) -> Optional[str]:
+    """Unknown tool name: infer the intended tool from the argument shape."""
+    keys = set(args)
+    if "old_str" in keys or "new_str" in keys or "file_text" in keys or ({"path", "content"} <= keys):
+        return "str_replace_editor"
+    if "command" in keys or "cmd" in keys:
+        return "bash"
+    if "pattern" in keys or "query" in keys or "regex" in keys:
+        return "search"
+    if "symbol" in keys:
+        return "find_definition"
+    if "verification_commands" in keys or "summary" in keys:
+        return "submit"
+    if keys and keys <= {"path", "file_path", "view_range", "start_line", "end_line"}:
+        return "str_replace_editor"
+    return None
+
+
 def canonicalize(call: ToolCall) -> Optional[ToolCall]:
     """Map alias tool names/argument spellings onto the declared schema, so the transcript only
     ever contains declared tools (some providers 500 on histories with undeclared tool names).
-    Returns None for a name we cannot map."""
+    Returns None for a call we cannot map."""
+    raw_name = (call.name or "").strip()
+    base = raw_name
+    for prefix in NAMESPACE_PREFIXES:  # e.g. "functions.bash"; built-ins like "browser.open" stay unknown
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    sub = EDITOR_SUBCOMMANDS.get(base)
+    name = ALIASES.get(base, base)
+    if sub and base not in TOOL_NAMES:
+        name = "str_replace_editor"
     if call.parse_error:
-        name = ALIASES.get(call.name, call.name)
-        return ToolCall(call.id, name if name in TOOL_NAMES else call.name, {}, call.raw_arguments, call.parse_error) if name in TOOL_NAMES else None
-    name = ALIASES.get(call.name, call.name)
-    if name not in TOOL_NAMES:
-        return None
+        return ToolCall(call.id, name, {}, call.raw_arguments, call.parse_error) if name in TOOL_NAMES else None
     args = dict(call.arguments or {})
+    if name not in TOOL_NAMES:
+        name = _infer_from_args(args) or ""
+        if name not in TOOL_NAMES:
+            return None
+    if name == "str_replace_editor" and sub and not args.get("command"):
+        args["command"] = sub
+    for alt in ("content", "text"):
+        if name == "str_replace_editor" and args.get("command") == "create" and alt in args and "file_text" not in args:
+            args["file_text"] = args.pop(alt)
+    if name == "str_replace_editor" and args.get("command") == "view" and "view_range" not in args and "start_line" in args:
+        try:
+            args["view_range"] = [int(args.pop("start_line")), int(args.pop("end_line", -1))]
+        except (TypeError, ValueError):
+            pass
     for alt in ("file_path", "file", "filename"):
         if alt in args and "path" not in args:
             args["path"] = args.pop(alt)

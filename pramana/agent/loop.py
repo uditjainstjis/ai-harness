@@ -194,6 +194,24 @@ class Attempt:
             notes.append(prompts.BUDGET_NUDGE.format(left=left, what="Submit now with your best verified change."))
         return notes
 
+    def _rel_path(self, path: Any) -> str:
+        if not path:
+            return ""
+        try:
+            ed = self.toolbox.editor
+            return ed.rel(ed.resolve(str(path)))
+        except Exception:  # noqa: BLE001
+            return str(path)
+
+    @staticmethod
+    def _elide_stale_views(messages: List[Dict[str, Any]], rel: str) -> None:
+        """Earlier views of a file that was just edited show stale content and line numbers."""
+        for m in messages:
+            if m.get("role") == "tool" and m.get("_view_path") == rel and not m.get("_elided") and len(m.get("content") or "") > 400:
+                m["content"] = (f"[Earlier view of {rel} elided by the harness: the file was edited afterwards, so that "
+                                "content and its line numbers are stale. View the file again if you need it.]")
+                m["_elided"] = True
+
     def _maybe_compact(self, messages: List[Dict[str, Any]]) -> None:
         size = self._last_prompt_tokens or estimate_tokens(messages)
         if size > self.compact_at:
@@ -282,7 +300,14 @@ class Attempt:
                 elif call.name == "bash" and ".pramana/" in str(args.get("command", "")):
                     self.events.emit("phase", name="reproduce", attempt=self.n)
                 res = self.toolbox.execute(call)
-                messages.append({"role": "tool", "tool_call_id": call.id, "name": call.name, "content": res.output})
+                tool_msg = {"role": "tool", "tool_call_id": call.id, "name": call.name, "content": res.output}
+                if call.name == "str_replace_editor" and not res.is_error:
+                    rel = self._rel_path(args.get("path"))
+                    if args.get("command") == "view" and rel:
+                        tool_msg["_view_path"] = rel
+                    elif args.get("command") in ("str_replace", "insert", "create", "undo_edit") and rel:
+                        self._elide_stale_views(messages, rel)
+                messages.append(tool_msg)
                 self.events.emit("tool_result", attempt=self.n, step=step, name=call.name, is_error=res.is_error,
                                  output=res.output[:4000], meta={k: v for k, v in res.meta.items() if k != "patch"})
                 self._track(call, res)

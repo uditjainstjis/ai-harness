@@ -14,8 +14,8 @@ Environment
 Workflow
 1. Understand: restate to yourself what the issue expects vs. what happens now.
 2. Localize: use the hints in the first message as a starting point, then confirm with search / find_definition / str_replace_editor view. Read the actual code path before deciding on a fix.
-3. Reproduce: write a small script in .pramana/ that exits non-zero (e.g. an assert or an uncaught exception) while the bug is present, run it, and confirm it fails for the reason described in the issue.
-4. Fix: edit the source with str_replace_editor. Fix the root cause, not the symptom; handle the edge cases the issue implies; follow the surrounding code's style; keep the diff small. Do not change public behaviour the issue does not ask to change.
+3. Reproduce: write a small script in .pramana/ that exits non-zero (e.g. an assert or an uncaught exception) while the bug is present, run it, and confirm it fails for the reason described in the issue. Write it like the regression test a maintainer would add: assert EVERY behaviour the issue describes, the obvious sibling cases (e.g. Min when Max is reported; the other phases/modes/types that go through the same code), and that closely related behaviour which must NOT change still works.
+4. Fix: edit the source with str_replace_editor. Fix the root cause, not the symptom: if the issue (or your analysis) identifies the faulty mechanism - e.g. "the list is replaced instead of cleared" - change that mechanism directly instead of compensating for it elsewhere. Prefer extending the existing general mechanism (a registry, a dispatch table, a shared helper) over special-casing the single example from the issue. Follow the surrounding code's style; keep the diff small; do not change behaviour the issue does not ask to change.
 5. Verify: re-run your reproduction (it must now pass) and the existing tests for the code you changed (a test file or module - never the whole suite). If a test fails, run it with `compare` to see whether it also fails on the original code: pre-existing failures (e.g. environment-specific ones) are NOT yours to fix - ignore them. Fix only regressions your change caused.
 6. Submit: call submit with a short summary and your verification commands. The harness re-runs them on the original and on the patched code; a regression or a still-failing reproduction sends the task back to you.
 
@@ -96,11 +96,14 @@ REVIEW_PROMPT = """You are reviewing a patch produced by an autonomous agent for
 {evidence}
 </evidence>
 
-Decide whether the patch resolves the issue at its root cause without breaking reasonable existing behaviour. Consider: does it handle all cases the issue describes (not just the one example)? Is the change in the right place (the function the behaviour actually comes from)? Could it break other callers?
+Work through these steps before deciding:
+1. Write down (to yourself) the regression test the project's maintainers would add for this issue: 3-6 concrete assertions covering every case in the issue, the obvious sibling cases (related functions/classes/modes that share the code path), and behaviour that must stay unchanged.
+2. For each assertion, trace whether the patched code satisfies it.
+3. Check the fix is at the root cause the issue describes (not a workaround in a caller), and that it does not special-case only the example.
 
 Reply with one line of JSON and nothing else:
-{{"verdict": "approve" | "revise", "concerns": ["<specific, actionable problem>", ...]}}
-Only say "revise" for a concrete defect you can name; stylistic preferences are not defects."""
+{{"verdict": "approve" | "revise", "concerns": ["<specific, actionable problem, e.g. 'Min(x, 2) still prints as Min(2, x): the fix only covers Max'>", ...]}}
+Say "revise" only for a concrete defect you can name (a failing assertion from step 1, a root-cause miss, a broken sibling case); style is not a defect."""
 
 
 def build_initial(issue: str, overview: str, hints: str, acceptance_cmd: Optional[str], lessons: Optional[str],

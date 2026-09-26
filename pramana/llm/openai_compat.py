@@ -92,6 +92,7 @@ class OpenAICompatLLM:
         self._use_max_completion = model.startswith(("o1", "o3", "o4", "gpt-5")) and provider == "openai"
         # reasoning models trained to see their own earlier analysis inside a tool-calling loop
         self.reasoning_window = 6 if "gpt-oss" in model.lower() else 0
+        self.text_mode_stops: List[str] = []  # set by ChatModel when it drives this backend in text mode
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -167,6 +168,8 @@ class OpenAICompatLLM:
             p["seed"] = self.seed
         if self.provider == "openrouter":
             p["usage"] = {"include": True}
+        if not tools and self.text_mode_stops and "stop" not in self._dropped:
+            p["stop"] = self.text_mode_stops
         return p
 
     def _negotiate(self, err_text: str, payload: Dict[str, Any]) -> bool:
@@ -176,7 +179,7 @@ class OpenAICompatLLM:
         if "reasoning" in low and self.reasoning_window and "reasoning_effort" not in low:
             self.reasoning_window = 0  # endpoint rejects passed-back reasoning: stop sending it
             changed = True
-        for param in ("temperature", "parallel_tool_calls", "reasoning_effort", "seed", "top_p"):
+        for param in ("temperature", "parallel_tool_calls", "reasoning_effort", "seed", "top_p", "stop"):
             if param in low and param in payload and param not in self._dropped:
                 self._dropped.add(param)
                 changed = True
