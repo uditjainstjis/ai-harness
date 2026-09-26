@@ -103,9 +103,11 @@ tests) — 19-instance stratified sample, run locally without Docker through the
 
 Model: `gpt-oss-120b` (a free open-weights endpoint, not a frontier model) at temperature 0.
 Token counts are raw; on a provider with prompt caching most input tokens are cache reads.
-Honest caveats: 19 instances is a small sample, it is drawn from the repos that install cleanly
-without Docker, and an environment counts only if the *official* patch passes its tests here
-(that check excludes `psf/requests`, which needs network access, and `pallets/flask`).
+Honest caveats: 19 instances is a small sample; it is drawn from the repos that install cleanly
+without Docker; an environment counts only if the *official* patch passes its tests here (that
+check excludes `psf/requests`, which needs network access, and `pallets/flask`); and individual
+instances flip between runs — repeated runs of the same 10-instance subset scored 5, 6 and 6 —
+so treat single-instance differences as noise and the rate as approximate.
 
 **Bundled benchmark** (`make bench`) — 4 tasks with hidden tests: two Python bug fixes, a
 JavaScript bug fix, and a feature request.
