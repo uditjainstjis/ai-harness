@@ -13,7 +13,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from ..llm import ChatModel, LLMError
-from ..llm.base import ToolSpec
+from ..llm.base import ToolSpec, short_error
 from ..tools import TOOL_SPECS, Toolbox, canonicalize
 
 WRITER_SYSTEM = """You are an independent QA engineer. Another engineer has changed this repository to resolve the issue below; you do NOT see their change. Your job: write the regression test the project's maintainers would add for this issue, so the harness can check the change against it.
@@ -59,7 +59,7 @@ class TestWriter:
             try:
                 resp = self.model.chat(messages, tools=self.specs(), temperature=0.0)
             except LLMError as e:
-                self.events.emit("log", level="warn", message=f"independent test writer stopped: {str(e)[:150]}")
+                self.events.emit("log", level="warn", message=f"independent test writer skipped: {short_error(e, 90)}")
                 return None
             calls = []
             for tc in resp.tool_calls:

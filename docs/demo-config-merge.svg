@@ -1,0 +1,371 @@
+<svg class="rich-terminal" viewBox="0 0 1458 1928.8" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <style>
+
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Regular"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Regular.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Regular.woff") format("woff");
+        font-style: normal;
+        font-weight: 400;
+    }
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Bold"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Bold.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Bold.woff") format("woff");
+        font-style: bold;
+        font-weight: 700;
+    }
+
+    .terminal-1755000320-matrix {
+        font-family: Fira Code, monospace;
+        font-size: 20px;
+        line-height: 24.4px;
+        font-variant-east-asian: full-width;
+    }
+
+    .terminal-1755000320-title {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }
+
+    .terminal-1755000320-r1 { fill: #868887 }
+.terminal-1755000320-r2 { fill: #c5c8c6 }
+.terminal-1755000320-r3 { fill: #68a0b3 }
+.terminal-1755000320-r4 { fill: #c2622d }
+.terminal-1755000320-r5 { fill: #c5c8c6;font-weight: bold }
+.terminal-1755000320-r6 { fill: #98a84b }
+.terminal-1755000320-r7 { fill: #98a84b;font-weight: bold }
+.terminal-1755000320-r8 { fill: #d0b344 }
+.terminal-1755000320-r9 { fill: #ff2627 }
+.terminal-1755000320-r10 { fill: #98729f;font-weight: bold }
+    </style>
+
+    <defs>
+    <clipPath id="terminal-1755000320-clip-terminal">
+      <rect x="0" y="0" width="1438.6" height="1877.8" />
+    </clipPath>
+    <clipPath id="terminal-1755000320-line-0">
+    <rect x="0" y="1.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-1">
+    <rect x="0" y="25.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-2">
+    <rect x="0" y="50.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-3">
+    <rect x="0" y="74.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-4">
+    <rect x="0" y="99.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-5">
+    <rect x="0" y="123.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-6">
+    <rect x="0" y="147.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-7">
+    <rect x="0" y="172.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-8">
+    <rect x="0" y="196.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-9">
+    <rect x="0" y="221.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-10">
+    <rect x="0" y="245.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-11">
+    <rect x="0" y="269.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-12">
+    <rect x="0" y="294.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-13">
+    <rect x="0" y="318.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-14">
+    <rect x="0" y="343.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-15">
+    <rect x="0" y="367.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-16">
+    <rect x="0" y="391.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-17">
+    <rect x="0" y="416.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-18">
+    <rect x="0" y="440.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-19">
+    <rect x="0" y="465.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-20">
+    <rect x="0" y="489.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-21">
+    <rect x="0" y="513.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-22">
+    <rect x="0" y="538.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-23">
+    <rect x="0" y="562.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-24">
+    <rect x="0" y="587.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-25">
+    <rect x="0" y="611.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-26">
+    <rect x="0" y="635.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-27">
+    <rect x="0" y="660.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-28">
+    <rect x="0" y="684.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-29">
+    <rect x="0" y="709.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-30">
+    <rect x="0" y="733.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-31">
+    <rect x="0" y="757.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-32">
+    <rect x="0" y="782.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-33">
+    <rect x="0" y="806.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-34">
+    <rect x="0" y="831.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-35">
+    <rect x="0" y="855.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-36">
+    <rect x="0" y="879.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-37">
+    <rect x="0" y="904.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-38">
+    <rect x="0" y="928.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-39">
+    <rect x="0" y="953.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-40">
+    <rect x="0" y="977.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-41">
+    <rect x="0" y="1001.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-42">
+    <rect x="0" y="1026.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-43">
+    <rect x="0" y="1050.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-44">
+    <rect x="0" y="1075.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-45">
+    <rect x="0" y="1099.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-46">
+    <rect x="0" y="1123.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-47">
+    <rect x="0" y="1148.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-48">
+    <rect x="0" y="1172.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-49">
+    <rect x="0" y="1197.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-50">
+    <rect x="0" y="1221.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-51">
+    <rect x="0" y="1245.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-52">
+    <rect x="0" y="1270.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-53">
+    <rect x="0" y="1294.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-54">
+    <rect x="0" y="1319.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-55">
+    <rect x="0" y="1343.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-56">
+    <rect x="0" y="1367.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-57">
+    <rect x="0" y="1392.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-58">
+    <rect x="0" y="1416.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-59">
+    <rect x="0" y="1441.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-60">
+    <rect x="0" y="1465.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-61">
+    <rect x="0" y="1489.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-62">
+    <rect x="0" y="1514.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-63">
+    <rect x="0" y="1538.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-64">
+    <rect x="0" y="1563.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-65">
+    <rect x="0" y="1587.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-66">
+    <rect x="0" y="1611.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-67">
+    <rect x="0" y="1636.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-68">
+    <rect x="0" y="1660.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-69">
+    <rect x="0" y="1685.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-70">
+    <rect x="0" y="1709.5" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-71">
+    <rect x="0" y="1733.9" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-72">
+    <rect x="0" y="1758.3" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-73">
+    <rect x="0" y="1782.7" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-74">
+    <rect x="0" y="1807.1" width="1439.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1755000320-line-75">
+    <rect x="0" y="1831.5" width="1439.6" height="24.65"/>
+            </clipPath>
+    </defs>
+
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1456" height="1926.8" rx="8"/><text class="terminal-1755000320-title" fill="#c5c8c6" text-anchor="middle" x="728" y="27">pramana&#160;·&#160;config-merge</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
+            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
+            <circle cx="44" cy="0" r="7" fill="#28c840"/>
+            </g>
+        
+    <g transform="translate(9, 41)" clip-path="url(#terminal-1755000320-clip-terminal)">
+    
+    <g class="terminal-1755000320-matrix">
+    <text class="terminal-1755000320-r1" x="0" y="20" textLength="1244.4" clip-path="url(#terminal-1755000320-line-0)">run&#160;→&#160;/Users/uditjain/Desktop/ai-harness/pramana/runs/20260926-154209-load-layers-corrupts-the-base-co</text><text class="terminal-1755000320-r2" x="1439.6" y="20" textLength="12.2" clip-path="url(#terminal-1755000320-line-0)">
+</text><text class="terminal-1755000320-r3" x="0" y="44.4" textLength="646.6" clip-path="url(#terminal-1755000320-line-1)">intake:&#160;Python&#160;·&#160;5&#160;files&#160;·&#160;tests:&#160;python&#160;-m&#160;pytest&#160;-q</text><text class="terminal-1755000320-r2" x="1439.6" y="44.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-1)">
+</text><text class="terminal-1755000320-r3" x="0" y="68.8" textLength="1390.8" clip-path="url(#terminal-1755000320-line-2)">issue&#160;code&#160;run&#160;on&#160;the&#160;original:&#160;.pramana/issue_snippet_1.py&#160;→&#160;exit&#160;1:&#160;NameError:&#160;name&#160;&#x27;load_layers&#x27;&#160;is&#160;not&#160;defined</text><text class="terminal-1755000320-r2" x="1439.6" y="68.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-2)">
+</text><text class="terminal-1755000320-r3" x="0" y="93.2" textLength="963.8" clip-path="url(#terminal-1755000320-line-3)">localized&#160;in&#160;0.0s&#160;→&#160;layercfg/loader.py,&#160;layercfg/merge.py,&#160;layercfg/__init__.py</text><text class="terminal-1755000320-r2" x="1439.6" y="93.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-3)">
+</text><text class="terminal-1755000320-r3" x="0" y="117.6" textLength="512.4" clip-path="url(#terminal-1755000320-line-4)">acceptance&#160;checklist&#160;predicted:&#160;8&#160;criteria</text><text class="terminal-1755000320-r2" x="1439.6" y="117.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-4)">
+</text><text class="terminal-1755000320-r4" x="0" y="142" textLength="48.8" clip-path="url(#terminal-1755000320-line-5)">&#160;&#160;✎&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="142" textLength="231.8" clip-path="url(#terminal-1755000320-line-5)">str_replace_editor&#160;</text><text class="terminal-1755000320-r2" x="280.6" y="142" textLength="390.4" clip-path="url(#terminal-1755000320-line-5)">view&#160;layercfg/loader.py&#160;[1,&#160;200]</text><text class="terminal-1755000320-r2" x="1439.6" y="142" textLength="12.2" clip-path="url(#terminal-1755000320-line-5)">
+</text><text class="terminal-1755000320-r4" x="0" y="166.4" textLength="48.8" clip-path="url(#terminal-1755000320-line-6)">&#160;&#160;✎&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="166.4" textLength="231.8" clip-path="url(#terminal-1755000320-line-6)">str_replace_editor&#160;</text><text class="terminal-1755000320-r2" x="280.6" y="166.4" textLength="378.2" clip-path="url(#terminal-1755000320-line-6)">view&#160;layercfg/merge.py&#160;[1,&#160;200]</text><text class="terminal-1755000320-r2" x="1439.6" y="166.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-6)">
+</text><text class="terminal-1755000320-r4" x="0" y="190.8" textLength="48.8" clip-path="url(#terminal-1755000320-line-7)">&#160;&#160;✎&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="190.8" textLength="231.8" clip-path="url(#terminal-1755000320-line-7)">str_replace_editor&#160;</text><text class="terminal-1755000320-r2" x="280.6" y="190.8" textLength="366" clip-path="url(#terminal-1755000320-line-7)">str_replace&#160;layercfg/loader.py</text><text class="terminal-1755000320-r2" x="1439.6" y="190.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-7)">
+</text><text class="terminal-1755000320-r6" x="0" y="215.2" textLength="671" clip-path="url(#terminal-1755000320-line-8)">&#160;&#160;&#160;&#160;↳&#160;Edited&#160;layercfg/loader.py&#160;(+13&#160;-4&#160;lines).&#160;Result:</text><text class="terminal-1755000320-r2" x="1439.6" y="215.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-8)">
+</text><text class="terminal-1755000320-r4" x="0" y="239.6" textLength="48.8" clip-path="url(#terminal-1755000320-line-9)">&#160;&#160;$&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="239.6" textLength="61" clip-path="url(#terminal-1755000320-line-9)">bash&#160;</text><text class="terminal-1755000320-r2" x="109.8" y="239.6" textLength="488" clip-path="url(#terminal-1755000320-line-9)">python&#160;-m&#160;pytest&#160;-q&#160;tests/test_loader.py</text><text class="terminal-1755000320-r2" x="1439.6" y="239.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-9)">
+</text><text class="terminal-1755000320-r4" x="0" y="264" textLength="48.8" clip-path="url(#terminal-1755000320-line-10)">&#160;&#160;✎&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="264" textLength="231.8" clip-path="url(#terminal-1755000320-line-10)">str_replace_editor&#160;</text><text class="terminal-1755000320-r2" x="280.6" y="264" textLength="292.8" clip-path="url(#terminal-1755000320-line-10)">create&#160;.pramana/repro.py</text><text class="terminal-1755000320-r2" x="1439.6" y="264" textLength="12.2" clip-path="url(#terminal-1755000320-line-10)">
+</text><text class="terminal-1755000320-r6" x="0" y="288.4" textLength="524.6" clip-path="url(#terminal-1755000320-line-11)">&#160;&#160;&#160;&#160;↳&#160;Created&#160;.pramana/repro.py&#160;(39&#160;lines).</text><text class="terminal-1755000320-r2" x="1439.6" y="288.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-11)">
+</text><text class="terminal-1755000320-r4" x="0" y="312.8" textLength="48.8" clip-path="url(#terminal-1755000320-line-12)">&#160;&#160;$&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="312.8" textLength="61" clip-path="url(#terminal-1755000320-line-12)">bash&#160;</text><text class="terminal-1755000320-r2" x="109.8" y="312.8" textLength="292.8" clip-path="url(#terminal-1755000320-line-12)">python&#160;.pramana/repro.py</text><text class="terminal-1755000320-r2" x="1439.6" y="312.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-12)">
+</text><text class="terminal-1755000320-r4" x="0" y="337.2" textLength="48.8" clip-path="url(#terminal-1755000320-line-13)">&#160;&#160;✔&#160;</text><text class="terminal-1755000320-r5" x="48.8" y="337.2" textLength="85.4" clip-path="url(#terminal-1755000320-line-13)">submit&#160;</text><text class="terminal-1755000320-r2" x="134.2" y="337.2" textLength="1305.4" clip-path="url(#terminal-1755000320-line-13)">load_layers&#160;previously&#160;mutated&#160;the&#160;first&#160;layer&#160;and&#160;shared&#160;mutable&#160;nested&#160;objects&#160;because&#160;it&#160;used&#160;the&#160;first&#160;</text><text class="terminal-1755000320-r2" x="1439.6" y="337.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-13)">
+</text><text class="terminal-1755000320-r2" x="0" y="361.6" textLength="36.6" clip-path="url(#terminal-1755000320-line-14)">lay</text><text class="terminal-1755000320-r2" x="1439.6" y="361.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-14)">
+</text><text class="terminal-1755000320-r6" x="0" y="386" textLength="549" clip-path="url(#terminal-1755000320-line-15)">&#160;&#160;&#160;&#160;&#160;&#160;fixes&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;python&#160;.pramana/repro.py</text><text class="terminal-1755000320-r2" x="1439.6" y="386" textLength="12.2" clip-path="url(#terminal-1755000320-line-15)">
+</text><text class="terminal-1755000320-r1" x="0" y="410.4" textLength="744.2" clip-path="url(#terminal-1755000320-line-16)">&#160;&#160;&#160;&#160;&#160;&#160;passes_both&#160;&#160;&#160;&#160;python&#160;-m&#160;pytest&#160;-q&#160;tests/test_loader.py</text><text class="terminal-1755000320-r2" x="1439.6" y="410.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-16)">
+</text><text class="terminal-1755000320-r7" x="0" y="434.8" textLength="536.8" clip-path="url(#terminal-1755000320-line-17)">&#160;&#160;⚖&#160;gate&#160;round&#160;1:&#160;ACCEPTED&#160;(evidence&#160;strong)</text><text class="terminal-1755000320-r2" x="1439.6" y="434.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-17)">
+</text><text class="terminal-1755000320-r8" x="0" y="459.2" textLength="1378.6" clip-path="url(#terminal-1755000320-line-18)">&#160;&#160;warn:&#160;independent&#160;test&#160;writer&#160;stopped:&#160;HTTP&#160;500&#160;after&#160;retries:&#160;{&quot;error&quot;:{&quot;message&quot;:&quot;500&#160;Internal&#160;Server&#160;Error:&#160;</text><text class="terminal-1755000320-r2" x="1439.6" y="459.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-18)">
+</text><text class="terminal-1755000320-r8" x="0" y="483.6" textLength="951.6" clip-path="url(#terminal-1755000320-line-19)">Internal&#160;Server&#160;Error&#160;(ref:&#160;ebf0678b-a5a4-4e7a-b8bc-4d6450fdcfd8)&quot;,&quot;type&quot;:&quot;api</text><text class="terminal-1755000320-r2" x="1439.6" y="483.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-19)">
+</text><text class="terminal-1755000320-r6" x="0" y="508" textLength="256.2" clip-path="url(#terminal-1755000320-line-20)">&#160;&#160;🔍&#160;reviewer:&#160;approve</text><text class="terminal-1755000320-r2" x="1439.6" y="508" textLength="12.2" clip-path="url(#terminal-1755000320-line-20)">
+</text><text class="terminal-1755000320-r5" x="0" y="532.4" textLength="658.8" clip-path="url(#terminal-1755000320-line-21)">attempt&#160;1&#160;ended:&#160;submitted&#160;·&#160;evidence&#160;strong&#160;·&#160;7&#160;steps</text><text class="terminal-1755000320-r2" x="1439.6" y="532.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-21)">
+</text><text class="terminal-1755000320-r2" x="1439.6" y="556.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-22)">
+</text><text class="terminal-1755000320-r7" x="0" y="581.2" textLength="634.4" clip-path="url(#terminal-1755000320-line-23)">───────────────────────────────────────────────────&#160;</text><text class="terminal-1755000320-r7" x="634.4" y="581.2" textLength="170.8" clip-path="url(#terminal-1755000320-line-23)">&#160;VERIFIED&#160;FIX&#160;</text><text class="terminal-1755000320-r7" x="805.2" y="581.2" textLength="634.4" clip-path="url(#terminal-1755000320-line-23)">&#160;───────────────────────────────────────────────────</text><text class="terminal-1755000320-r2" x="1439.6" y="581.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-23)">
+</text><text class="terminal-1755000320-r1" x="0" y="605.6" textLength="24.4" clip-path="url(#terminal-1755000320-line-24)">╭─</text><text class="terminal-1755000320-r1" x="24.4" y="605.6" textLength="561.2" clip-path="url(#terminal-1755000320-line-24)">──────────────────────────────────────────────</text><text class="terminal-1755000320-r1" x="585.6" y="605.6" textLength="268.4" clip-path="url(#terminal-1755000320-line-24)">&#160;what&#160;changed&#160;and&#160;why&#160;</text><text class="terminal-1755000320-r1" x="854" y="605.6" textLength="561.2" clip-path="url(#terminal-1755000320-line-24)">──────────────────────────────────────────────</text><text class="terminal-1755000320-r1" x="1415.2" y="605.6" textLength="24.4" clip-path="url(#terminal-1755000320-line-24)">─╮</text><text class="terminal-1755000320-r2" x="1439.6" y="605.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-24)">
+</text><text class="terminal-1755000320-r1" x="0" y="630" textLength="12.2" clip-path="url(#terminal-1755000320-line-25)">│</text><text class="terminal-1755000320-r2" x="24.4" y="630" textLength="1378.6" clip-path="url(#terminal-1755000320-line-25)">load_layers&#160;previously&#160;mutated&#160;the&#160;first&#160;layer&#160;and&#160;shared&#160;mutable&#160;nested&#160;objects&#160;because&#160;it&#160;used&#160;the&#160;first&#160;layer&#160;</text><text class="terminal-1755000320-r1" x="1427.4" y="630" textLength="12.2" clip-path="url(#terminal-1755000320-line-25)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="630" textLength="12.2" clip-path="url(#terminal-1755000320-line-25)">
+</text><text class="terminal-1755000320-r1" x="0" y="654.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-26)">│</text><text class="terminal-1755000320-r2" x="24.4" y="654.4" textLength="1366.4" clip-path="url(#terminal-1755000320-line-26)">as&#160;the&#160;result&#160;and&#160;deep_merge&#160;mutated&#160;in&#160;place.&#160;Fixed&#160;by&#160;starting&#160;with&#160;an&#160;empty&#160;dict&#160;and&#160;deep&#160;copying&#160;each&#160;layer&#160;</text><text class="terminal-1755000320-r1" x="1427.4" y="654.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-26)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="654.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-26)">
+</text><text class="terminal-1755000320-r1" x="0" y="678.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-27)">│</text><text class="terminal-1755000320-r2" x="24.4" y="678.8" textLength="1110.2" clip-path="url(#terminal-1755000320-line-27)">before&#160;merging,&#160;ensuring&#160;no&#160;input&#160;layer&#160;is&#160;modified&#160;and&#160;the&#160;returned&#160;config&#160;is&#160;independent.</text><text class="terminal-1755000320-r1" x="1427.4" y="678.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-27)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="678.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-27)">
+</text><text class="terminal-1755000320-r1" x="0" y="703.2" textLength="1439.6" clip-path="url(#terminal-1755000320-line-28)">╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text><text class="terminal-1755000320-r2" x="1439.6" y="703.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-28)">
+</text><text class="terminal-1755000320-r1" x="0" y="727.6" textLength="1439.6" clip-path="url(#terminal-1755000320-line-29)">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;evidence:&#160;each&#160;check&#160;run&#160;on&#160;the&#160;original&#160;and&#160;on&#160;the&#160;patched&#160;code&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="1439.6" y="727.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-29)">
+</text><text class="terminal-1755000320-r2" x="0" y="752" textLength="1439.6" clip-path="url(#terminal-1755000320-line-30)">┏━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓</text><text class="terminal-1755000320-r2" x="1439.6" y="752" textLength="12.2" clip-path="url(#terminal-1755000320-line-30)">
+</text><text class="terminal-1755000320-r2" x="0" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">┃</text><text class="terminal-1755000320-r5" x="24.4" y="776.4" textLength="134.2" clip-path="url(#terminal-1755000320-line-31)">verdict&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="170.8" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">┃</text><text class="terminal-1755000320-r5" x="195.2" y="776.4" textLength="73.2" clip-path="url(#terminal-1755000320-line-31)">origin</text><text class="terminal-1755000320-r2" x="280.6" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">┃</text><text class="terminal-1755000320-r5" x="305" y="776.4" textLength="366" clip-path="url(#terminal-1755000320-line-31)">command&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="683.2" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">┃</text><text class="terminal-1755000320-r5" x="707.6" y="776.4" textLength="366" clip-path="url(#terminal-1755000320-line-31)">original&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="1085.8" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">┃</text><text class="terminal-1755000320-r5" x="1110.2" y="776.4" textLength="305" clip-path="url(#terminal-1755000320-line-31)">patched&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="1427.4" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">┃</text><text class="terminal-1755000320-r2" x="1439.6" y="776.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-31)">
+</text><text class="terminal-1755000320-r2" x="0" y="800.8" textLength="1439.6" clip-path="url(#terminal-1755000320-line-32)">┡━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩</text><text class="terminal-1755000320-r2" x="1439.6" y="800.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-32)">
+</text><text class="terminal-1755000320-r2" x="0" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">│</text><text class="terminal-1755000320-r6" x="24.4" y="825.2" textLength="134.2" clip-path="url(#terminal-1755000320-line-33)">fixes&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="170.8" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">│</text><text class="terminal-1755000320-r2" x="195.2" y="825.2" textLength="73.2" clip-path="url(#terminal-1755000320-line-33)">agent&#160;</text><text class="terminal-1755000320-r2" x="280.6" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">│</text><text class="terminal-1755000320-r2" x="305" y="825.2" textLength="366" clip-path="url(#terminal-1755000320-line-33)">python&#160;.pramana/repro.py&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="683.2" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">│</text><text class="terminal-1755000320-r2" x="707.6" y="825.2" textLength="366" clip-path="url(#terminal-1755000320-line-33)">exit&#160;1:&#160;AssertionError:&#160;prod&#160;&#160;</text><text class="terminal-1755000320-r2" x="1085.8" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">│</text><text class="terminal-1755000320-r2" x="1110.2" y="825.2" textLength="305" clip-path="url(#terminal-1755000320-line-33)">exit&#160;0:&#160;All&#160;checks&#160;passed</text><text class="terminal-1755000320-r2" x="1427.4" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="825.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-33)">
+</text><text class="terminal-1755000320-r2" x="0" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">│</text><text class="terminal-1755000320-r2" x="170.8" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">│</text><text class="terminal-1755000320-r2" x="280.6" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">│</text><text class="terminal-1755000320-r2" x="683.2" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">│</text><text class="terminal-1755000320-r2" x="707.6" y="849.6" textLength="366" clip-path="url(#terminal-1755000320-line-34)">config&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="1085.8" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">│</text><text class="terminal-1755000320-r2" x="1427.4" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="849.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-34)">
+</text><text class="terminal-1755000320-r2" x="0" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">│</text><text class="terminal-1755000320-r2" x="24.4" y="874" textLength="134.2" clip-path="url(#terminal-1755000320-line-35)">passes_both</text><text class="terminal-1755000320-r2" x="170.8" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">│</text><text class="terminal-1755000320-r2" x="195.2" y="874" textLength="73.2" clip-path="url(#terminal-1755000320-line-35)">agent&#160;</text><text class="terminal-1755000320-r2" x="280.6" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">│</text><text class="terminal-1755000320-r2" x="305" y="874" textLength="366" clip-path="url(#terminal-1755000320-line-35)">python&#160;-m&#160;pytest&#160;-q&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="683.2" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">│</text><text class="terminal-1755000320-r2" x="707.6" y="874" textLength="366" clip-path="url(#terminal-1755000320-line-35)">exit&#160;0:&#160;2&#160;passed&#160;in&#160;0.00s&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="1085.8" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">│</text><text class="terminal-1755000320-r2" x="1110.2" y="874" textLength="305" clip-path="url(#terminal-1755000320-line-35)">exit&#160;0:&#160;2&#160;passed&#160;in&#160;0.00s</text><text class="terminal-1755000320-r2" x="1427.4" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="874" textLength="12.2" clip-path="url(#terminal-1755000320-line-35)">
+</text><text class="terminal-1755000320-r2" x="0" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">│</text><text class="terminal-1755000320-r2" x="170.8" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">│</text><text class="terminal-1755000320-r2" x="280.6" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">│</text><text class="terminal-1755000320-r2" x="305" y="898.4" textLength="366" clip-path="url(#terminal-1755000320-line-36)">tests/test_loader.py&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1755000320-r2" x="683.2" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">│</text><text class="terminal-1755000320-r2" x="1085.8" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">│</text><text class="terminal-1755000320-r2" x="1427.4" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">│</text><text class="terminal-1755000320-r2" x="1439.6" y="898.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-36)">
+</text><text class="terminal-1755000320-r2" x="0" y="922.8" textLength="1439.6" clip-path="url(#terminal-1755000320-line-37)">└─────────────┴────────┴────────────────────────────────┴────────────────────────────────┴───────────────────────────┘</text><text class="terminal-1755000320-r2" x="1439.6" y="922.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-37)">
+</text><text class="terminal-1755000320-r5" x="0" y="947.2" textLength="634.4" clip-path="url(#terminal-1755000320-line-38)">diff&#160;--git&#160;a/layercfg/loader.py&#160;b/layercfg/loader.py</text><text class="terminal-1755000320-r2" x="1439.6" y="947.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-38)">
+</text><text class="terminal-1755000320-r5" x="0" y="971.6" textLength="353.8" clip-path="url(#terminal-1755000320-line-39)">index&#160;2e6b448..68f7ab0&#160;100644</text><text class="terminal-1755000320-r2" x="1439.6" y="971.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-39)">
+</text><text class="terminal-1755000320-r9" x="0" y="996" textLength="292.8" clip-path="url(#terminal-1755000320-line-40)">---&#160;a/layercfg/loader.py</text><text class="terminal-1755000320-r2" x="1439.6" y="996" textLength="12.2" clip-path="url(#terminal-1755000320-line-40)">
+</text><text class="terminal-1755000320-r6" x="0" y="1020.4" textLength="292.8" clip-path="url(#terminal-1755000320-line-41)">+++&#160;b/layercfg/loader.py</text><text class="terminal-1755000320-r2" x="1439.6" y="1020.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-41)">
+</text><text class="terminal-1755000320-r10" x="0" y="1044.8" textLength="207.4" clip-path="url(#terminal-1755000320-line-42)">@@&#160;-1,11&#160;+1,20&#160;@@</text><text class="terminal-1755000320-r2" x="1439.6" y="1044.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-42)">
+</text><text class="terminal-1755000320-r2" x="12.2" y="1069.2" textLength="353.8" clip-path="url(#terminal-1755000320-line-43)">from&#160;.merge&#160;import&#160;deep_merge</text><text class="terminal-1755000320-r2" x="1439.6" y="1069.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-43)">
+</text><text class="terminal-1755000320-r2" x="1439.6" y="1093.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-44)">
+</text><text class="terminal-1755000320-r2" x="1439.6" y="1118" textLength="12.2" clip-path="url(#terminal-1755000320-line-45)">
+</text><text class="terminal-1755000320-r6" x="0" y="1142.4" textLength="146.4" clip-path="url(#terminal-1755000320-line-46)">+import&#160;copy</text><text class="terminal-1755000320-r2" x="1439.6" y="1142.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-46)">
+</text><text class="terminal-1755000320-r6" x="0" y="1166.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-47)">+</text><text class="terminal-1755000320-r2" x="1439.6" y="1166.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-47)">
+</text><text class="terminal-1755000320-r2" x="12.2" y="1191.2" textLength="292.8" clip-path="url(#terminal-1755000320-line-48)">def&#160;load_layers(layers):</text><text class="terminal-1755000320-r2" x="1439.6" y="1191.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-48)">
+</text><text class="terminal-1755000320-r9" x="0" y="1215.6" textLength="951.6" clip-path="url(#terminal-1755000320-line-49)">-&#160;&#160;&#160;&#160;&quot;&quot;&quot;Combine&#160;config&#160;layers;&#160;later&#160;layers&#160;win.&#160;Returns&#160;the&#160;merged&#160;config.&quot;&quot;&quot;</text><text class="terminal-1755000320-r2" x="1439.6" y="1215.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-49)">
+</text><text class="terminal-1755000320-r6" x="0" y="1240" textLength="939.4" clip-path="url(#terminal-1755000320-line-50)">+&#160;&#160;&#160;&#160;&quot;&quot;&quot;Combine&#160;config&#160;layers;&#160;later&#160;layers&#160;win.&#160;Returns&#160;a&#160;new&#160;merged&#160;config.</text><text class="terminal-1755000320-r2" x="1439.6" y="1240" textLength="12.2" clip-path="url(#terminal-1755000320-line-50)">
+</text><text class="terminal-1755000320-r6" x="0" y="1264.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-51)">+</text><text class="terminal-1755000320-r2" x="1439.6" y="1264.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-51)">
+</text><text class="terminal-1755000320-r6" x="0" y="1288.8" textLength="963.8" clip-path="url(#terminal-1755000320-line-52)">+&#160;&#160;&#160;&#160;The&#160;function&#160;does&#160;**not**&#160;modify&#160;any&#160;of&#160;the&#160;input&#160;layers,&#160;and&#160;the&#160;returned</text><text class="terminal-1755000320-r2" x="1439.6" y="1288.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-52)">
+</text><text class="terminal-1755000320-r6" x="0" y="1313.2" textLength="890.6" clip-path="url(#terminal-1755000320-line-53)">+&#160;&#160;&#160;&#160;configuration&#160;does&#160;not&#160;share&#160;mutable&#160;nested&#160;objects&#160;with&#160;the&#160;inputs.</text><text class="terminal-1755000320-r2" x="1439.6" y="1313.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-53)">
+</text><text class="terminal-1755000320-r6" x="0" y="1337.6" textLength="97.6" clip-path="url(#terminal-1755000320-line-54)">+&#160;&#160;&#160;&#160;&quot;&quot;&quot;</text><text class="terminal-1755000320-r2" x="1439.6" y="1337.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-54)">
+</text><text class="terminal-1755000320-r2" x="12.2" y="1362" textLength="219.6" clip-path="url(#terminal-1755000320-line-55)">&#160;&#160;&#160;&#160;if&#160;not&#160;layers:</text><text class="terminal-1755000320-r2" x="1439.6" y="1362" textLength="12.2" clip-path="url(#terminal-1755000320-line-55)">
+</text><text class="terminal-1755000320-r2" x="12.2" y="1386.4" textLength="207.4" clip-path="url(#terminal-1755000320-line-56)">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;return&#160;{}</text><text class="terminal-1755000320-r2" x="1439.6" y="1386.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-56)">
+</text><text class="terminal-1755000320-r9" x="0" y="1410.8" textLength="280.6" clip-path="url(#terminal-1755000320-line-57)">-&#160;&#160;&#160;&#160;result&#160;=&#160;layers[0]</text><text class="terminal-1755000320-r2" x="1439.6" y="1410.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-57)">
+</text><text class="terminal-1755000320-r9" x="0" y="1435.2" textLength="353.8" clip-path="url(#terminal-1755000320-line-58)">-&#160;&#160;&#160;&#160;for&#160;layer&#160;in&#160;layers[1:]:</text><text class="terminal-1755000320-r2" x="1439.6" y="1435.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-58)">
+</text><text class="terminal-1755000320-r9" x="0" y="1459.6" textLength="524.6" clip-path="url(#terminal-1755000320-line-59)">-&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;result&#160;=&#160;deep_merge(result,&#160;layer)</text><text class="terminal-1755000320-r2" x="1439.6" y="1459.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-59)">
+</text><text class="terminal-1755000320-r6" x="0" y="1484" textLength="829.6" clip-path="url(#terminal-1755000320-line-60)">+&#160;&#160;&#160;&#160;#&#160;Start&#160;with&#160;an&#160;empty&#160;dict&#160;and&#160;deep‑merge&#160;copies&#160;of&#160;each&#160;layer.</text><text class="terminal-1755000320-r2" x="1439.6" y="1484" textLength="12.2" clip-path="url(#terminal-1755000320-line-60)">
+</text><text class="terminal-1755000320-r6" x="0" y="1508.4" textLength="195.2" clip-path="url(#terminal-1755000320-line-61)">+&#160;&#160;&#160;&#160;result&#160;=&#160;{}</text><text class="terminal-1755000320-r2" x="1439.6" y="1508.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-61)">
+</text><text class="terminal-1755000320-r6" x="0" y="1532.8" textLength="305" clip-path="url(#terminal-1755000320-line-62)">+&#160;&#160;&#160;&#160;for&#160;layer&#160;in&#160;layers:</text><text class="terminal-1755000320-r2" x="1439.6" y="1532.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-62)">
+</text><text class="terminal-1755000320-r6" x="0" y="1557.2" textLength="976" clip-path="url(#terminal-1755000320-line-63)">+&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;#&#160;Use&#160;deepcopy&#160;to&#160;avoid&#160;mutating&#160;the&#160;original&#160;layer&#160;and&#160;to&#160;break&#160;shared</text><text class="terminal-1755000320-r2" x="1439.6" y="1557.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-63)">
+</text><text class="terminal-1755000320-r6" x="0" y="1581.6" textLength="744.2" clip-path="url(#terminal-1755000320-line-64)">+&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;#&#160;references&#160;to&#160;mutable&#160;values&#160;(lists,&#160;dicts,&#160;etc.).</text><text class="terminal-1755000320-r2" x="1439.6" y="1581.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-64)">
+</text><text class="terminal-1755000320-r6" x="0" y="1606" textLength="707.6" clip-path="url(#terminal-1755000320-line-65)">+&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;result&#160;=&#160;deep_merge(result,&#160;copy.deepcopy(layer))</text><text class="terminal-1755000320-r2" x="1439.6" y="1606" textLength="12.2" clip-path="url(#terminal-1755000320-line-65)">
+</text><text class="terminal-1755000320-r2" x="12.2" y="1630.4" textLength="207.4" clip-path="url(#terminal-1755000320-line-66)">&#160;&#160;&#160;&#160;return&#160;result</text><text class="terminal-1755000320-r2" x="1439.6" y="1630.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-66)">
+</text><text class="terminal-1755000320-r2" x="1439.6" y="1654.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-67)">
+</text><text class="terminal-1755000320-r1" x="0" y="1679.2" textLength="1024.8" clip-path="url(#terminal-1755000320-line-68)">tokens&#160;53,901&#160;(in&#160;49,516&#160;·&#160;cached&#160;0&#160;·&#160;out&#160;4,385)&#160;·&#160;17&#160;model&#160;calls&#160;·&#160;52s&#160;·&#160;attempts&#160;1</text><text class="terminal-1755000320-r2" x="1439.6" y="1679.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-68)">
+</text><text class="terminal-1755000320-r1" x="0" y="1703.6" textLength="268.4" clip-path="url(#terminal-1755000320-line-69)">the&#160;fix&#160;is&#160;applied&#160;in&#160;</text><text class="terminal-1755000320-r2" x="1439.6" y="1703.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-69)">
+</text><text class="terminal-1755000320-r5" x="0" y="1728" textLength="1183.4" clip-path="url(#terminal-1755000320-line-70)">/private/var/folders/mf/hn3t9mmn7fscn9_bnvj92xzm0000gn/T/pramana-bench-config-merge-bqf_jmwm/repo</text><text class="terminal-1755000320-r1" x="1183.4" y="1728" textLength="183" clip-path="url(#terminal-1755000320-line-70)">&#160;&#160;(git&#160;diff&#160;to&#160;</text><text class="terminal-1755000320-r2" x="1439.6" y="1728" textLength="12.2" clip-path="url(#terminal-1755000320-line-70)">
+</text><text class="terminal-1755000320-r1" x="0" y="1752.4" textLength="97.6" clip-path="url(#terminal-1755000320-line-71)">inspect)</text><text class="terminal-1755000320-r2" x="1439.6" y="1752.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-71)">
+</text><text class="terminal-1755000320-r1" x="0" y="1776.8" textLength="207.4" clip-path="url(#terminal-1755000320-line-72)">evidence&#160;bundle:&#160;</text><text class="terminal-1755000320-r5" x="207.4" y="1776.8" textLength="1171.2" clip-path="url(#terminal-1755000320-line-72)">/Users/uditjain/Desktop/ai-harness/pramana/runs/20260926-154209-load-layers-corrupts-the-base-co</text><text class="terminal-1755000320-r2" x="1439.6" y="1776.8" textLength="12.2" clip-path="url(#terminal-1755000320-line-72)">
+</text><text class="terminal-1755000320-r1" x="0" y="1801.2" textLength="463.6" clip-path="url(#terminal-1755000320-line-73)">(report.md&#160;/&#160;report.html&#160;/&#160;patch.diff)</text><text class="terminal-1755000320-r2" x="1439.6" y="1801.2" textLength="12.2" clip-path="url(#terminal-1755000320-line-73)">
+</text><text class="terminal-1755000320-r1" x="0" y="1825.6" textLength="207.4" clip-path="url(#terminal-1755000320-line-74)">open&#160;the&#160;report:&#160;</text><text class="terminal-1755000320-r2" x="1439.6" y="1825.6" textLength="12.2" clip-path="url(#terminal-1755000320-line-74)">
+</text><text class="terminal-1755000320-r2" x="0" y="1850" textLength="1403" clip-path="url(#terminal-1755000320-line-75)">file:///Users/uditjain/Desktop/ai-harness/pramana/runs/20260926-154209-load-layers-corrupts-the-base-co/report.html</text><text class="terminal-1755000320-r2" x="1439.6" y="1850" textLength="12.2" clip-path="url(#terminal-1755000320-line-75)">
+</text><text class="terminal-1755000320-r5" x="0" y="1874.4" textLength="329.4" clip-path="url(#terminal-1755000320-line-76)">hidden&#160;tests&#160;after&#160;the&#160;run:</text><text class="terminal-1755000320-r6" x="341.6" y="1874.4" textLength="48.8" clip-path="url(#terminal-1755000320-line-76)">PASS</text><text class="terminal-1755000320-r2" x="1439.6" y="1874.4" textLength="12.2" clip-path="url(#terminal-1755000320-line-76)">
+</text>
+    </g>
+    </g>
+</svg>

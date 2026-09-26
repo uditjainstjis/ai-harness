@@ -114,6 +114,17 @@ class LLMResponse:
         return msg
 
 
+def short_error(e: Exception, limit: int = 140) -> str:
+    """One readable line from a provider error (strip JSON envelopes and request ids)."""
+    msg = str(e)
+    m = re.search(r'"message"\s*:\s*"(.*?)"', msg)
+    if m:
+        msg = m.group(1)
+    msg = re.sub(r"\s*\(ref:[^)]*\)", "", msg)
+    msg = re.sub(r"\s+", " ", msg).strip()
+    return msg[:limit] + ("…" if len(msg) > limit else "")
+
+
 def new_call_id(prefix: str = "call") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 

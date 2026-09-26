@@ -69,7 +69,9 @@ class Orchestrator:
                                     {"role": "user", "content": prompts.CRITERIA_PROMPT.format(issue=issue_text[:12000])}],
                                    tools=None, temperature=0.0)
         except Exception as e:  # noqa: BLE001 - optional step
-            self.events.emit("log", level="warn", message=f"criteria prediction skipped: {str(e)[:120]}")
+            from ..llm.base import short_error
+
+            self.events.emit("log", level="warn", message=f"criteria prediction skipped: {short_error(e, 90)}")
             return ""
         lines = [l.strip() for l in (resp.text or "").splitlines() if re.match(r"^\s*\d+[.)]\s+\S", l)]
         text = "\n".join(lines[:8])[:2000]

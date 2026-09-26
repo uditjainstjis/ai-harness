@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional
 
 from ..llm import ChatModel, ContextOverflow, LLMError
-from ..llm.base import ToolCall, Usage
+from ..llm.base import ToolCall, Usage, short_error
 from ..tools import ToolResult, Toolbox, canonicalize
 from . import prompts
 from .context import compact, compact_hard, estimate_tokens, strip_private
@@ -168,7 +168,7 @@ class Attempt:
                     raise FatalModelError(msg)
                 if "HTTP 404" in msg and ("model" in msg.lower()):
                     raise FatalModelError(msg)
-                self.events.emit("log", level="warn", message=f"model error (retry {attempt + 1}/5): {msg[:200]}")
+                self.events.emit("log", level="warn", message=f"provider error, retrying ({attempt + 1}/5): {short_error(e)}")
                 # Some endpoints fail deterministically on a specific transcript. Identical retries
                 # cannot help there, so each retry perturbs the request a little more.
                 if attempt == 1:

@@ -17,7 +17,7 @@ make test                     # offline unit tests + (with a key) the end-to-end
 Non-interactive: `make run REPO=/path/or/git-url ISSUE=https://github.com/o/r/issues/123 TEST="pytest tests/test_x.py"`
 (the issue can also be piped on stdin).
 
-![Pramana live view solving a feature request: phases, tool calls, the submit gate's before/after verdicts, reviewer](docs/panel-todo-json.svg)
+![Pramana live view: phases, tool calls, the submit gate comparing original vs patched code, reviewer](docs/panel-config-merge.svg)
 
 ---
 
