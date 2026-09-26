@@ -79,6 +79,7 @@ class Verification:
     patch: str = ""
     changed: List[Tuple[str, str]] = field(default_factory=list)
     strength: str = "none"  # strong | weak | none
+    shadow_stubs: List[str] = field(default_factory=list)
     score: float = 0.0
     round: int = 0
     summary: str = ""
@@ -106,6 +107,43 @@ def summarize_output(out: str, code: Optional[int], timed_out: bool) -> str:
     lines = [l for l in out.strip().splitlines() if l.strip() and not l.startswith("[exit code")]
     last = lines[-1].strip() if lines else ""
     return f"exit {code}" + (f": {last[:120]}" if last else "")
+
+
+def shadowed_dependencies(root: Path, added: List[str], files: List[str]) -> List[Tuple[str, str]]:
+    """Added files that create a top-level module the repo IMPORTS but never defined: i.e. a fake
+    stand-in for a third-party package. Such a stub must never be part of a fix."""
+    import re as _re
+
+    out: List[Tuple[str, str]] = []
+    pre_existing = set(files)
+    for path in added:
+        p = Path(path)
+        if p.suffix not in (".py", ""):
+            continue
+        if len(p.parts) == 1:
+            mod = p.stem
+        elif len(p.parts) == 2 and p.name == "__init__.py":
+            mod = p.parts[0]
+        elif len(p.parts) == 3 and p.parts[0] == "src" and p.name == "__init__.py":
+            mod = p.parts[1]
+        else:
+            continue
+        if not mod.isidentifier() or mod in ("conftest", "setup", "tests", "test"):
+            continue
+        # did the repo already define this module before the patch?
+        if any(f == f"{mod}.py" or f.startswith((f"{mod}/", f"src/{mod}/")) for f in pre_existing):
+            continue
+        rx = _re.compile(rf"^\s*(?:from\s+{_re.escape(mod)}[\s.]|import\s+{_re.escape(mod)}\b)", _re.M)
+        for f in pre_existing:
+            if not f.endswith(".py") or f == path:
+                continue
+            try:
+                if rx.search((root / f).read_text(encoding="utf-8", errors="ignore")[:200_000]):
+                    out.append((path, f"`{mod}` is imported by {f} but is not part of this repository"))
+                    break
+            except OSError:
+                continue
+    return out
 
 
 def related_test_commands(changed: List[str], files: List[str], test_file_cmd: str, framework: str, limit: int = 2) -> List[str]:
@@ -162,6 +200,7 @@ class Gate:
         self.rounds = 0
         self.asked_for_proof = False
         self.warned_tests = False
+        self.warned_shadow = False
         self.history: List[Verification] = []
 
     def _run(self, cmd: str) -> Outcome:
@@ -255,6 +294,18 @@ class Gate:
             label = "the acceptance test" if c.origin == "acceptance" else "your verification command"
             problems.append(f"{label} `{c.command}` still fails after your change ({c.after.summary if c.after else '?'}):\n{c.after.tail if c.after else ''}")
 
+        added_paths = [p for s, p in changed if s == "A"]
+        shadows = shadowed_dependencies(self.root, added_paths, self.files)
+        if shadows and not self.warned_shadow and not last_round:
+            self.warned_shadow = True
+            problems.append(
+                "Your patch adds a stand-in for a third-party dependency: "
+                + "; ".join(f"{p} ({why})" for p, why in shadows)
+                + ". The evaluators install the real dependencies, so a stub like this is not part of the fix and can "
+                "mask failures. Delete it (rm the file) and instead install the real package "
+                "(python -m pip install <name>) or skip the test that needs it, then re-verify."
+            )
+        v.shadow_stubs = [p for p, _ in shadows]
         edited_tests = [p for s, p in changed if s == "M" and is_test_path(p)]
         if edited_tests and not self.warned_tests and not last_round:
             self.warned_tests = True

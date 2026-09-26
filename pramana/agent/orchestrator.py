@@ -299,7 +299,16 @@ class Orchestrator:
         created = set(best.created_files) if best else set()
         touched = set(best.touched_files) if best else set()
         moved, restored = [], []
+        stubs = set((result.verification.shadow_stubs if result.verification else []) or [])
         for status, path in git.changed_files():
+            if status == "A" and path in stubs:
+                dest = run_dir / "scratch" / "artifacts" / path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(root / path), str(dest))
+                moved.append(path)
+                self.events.emit("log", level="warn",
+                                 message=f"removed a third-party dependency stub from the patch: {path} (kept in the evidence bundle)")
+                continue
             name = path.rsplit("/", 1)[-1]
             if status == "A" and (path not in created or ("/" not in path and SCRATCH_LIKE.match(name))):
                 dest = run_dir / "scratch" / "artifacts" / path

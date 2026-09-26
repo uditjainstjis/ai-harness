@@ -291,3 +291,16 @@ def test_issue_condensing_and_test_style_snippets(tmp_path):
     code = "```python\nfrom lib import f\n\ndef test_f():\n    assert f() == 2\n```"
     runs = snippets.run_snippets(repo, scratch, build_env(repo), code)
     assert runs and "pytest" in runs[0]["command"]
+
+
+def test_gate_rejects_dependency_stub(tmp_path):
+    repo = make_repo(tmp_path, {
+        "pkg/__init__.py": "", "pkg/core.py": "def f():\n    return 1\n",
+        "tests/test_core.py": "import freezegun\nfrom pkg.core import f\n\n\ndef test_f():\n    assert f() == 2\n"})
+    git = GitTracker(repo)
+    files = ["pkg/__init__.py", "pkg/core.py", "tests/test_core.py"]
+    gate = Gate(repo, git, files, "", "unknown", build_env(repo), timeout_s=60)
+    (repo / "pkg" / "core.py").write_text("def f():\n    return 2\n")
+    (repo / "freezegun.py").write_text("def freeze_time(*a, **k):\n    pass\n")
+    v = gate.verify("fix f, stub freezegun", ["python3 -c 'from pkg.core import f; assert f() == 2'"])
+    assert not v.accepted and "third-party dependency" in v.feedback and v.shadow_stubs == ["freezegun.py"]

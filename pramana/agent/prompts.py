@@ -25,7 +25,7 @@ Rules
 - Stay on the issue. Do not fix unrelated problems you happen to notice (other failing tests, style, typos elsewhere).
 - If a tool call fails, read the error and change your approach; never repeat an identical failing call.
 - Be economical: view relevant line ranges instead of whole large files, batch independent lookups in one turn, keep test runs targeted (a file or a single test), and do not print huge outputs.
-- If the environment lacks a dependency needed to run code or tests, install it (e.g. `python -m pip install <pkg>`), but do not upgrade or reinstall the project's core dependencies.
+- If the environment lacks a dependency needed to run code or tests, install the real package (e.g. `python -m pip install <pkg>`); if that is impossible, run a narrower test that does not need it. NEVER write your own stand-in module for a third-party package - the evaluators install the real ones, and a stub hides failures. Do not upgrade or reinstall the project's core dependencies.
 """
 
 INITIAL_TEMPLATE = """<issue>

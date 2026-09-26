@@ -2,9 +2,11 @@
 text. Also clones a repository given as a URL into the harness workspace."""
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,12 +87,61 @@ def condense(text: str, block_limit: int = 1800) -> str:
     return "\n".join(out)
 
 
+def _gh_token() -> str:
+    tok = (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "").strip()
+    if tok:
+        return tok
+    if shutil.which("gh"):  # the evaluator's machine may already be logged in to the gh CLI
+        try:
+            p = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=10)
+            if p.returncode == 0:
+                return p.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return ""
+
+
 def _gh_headers() -> dict:
     h = {"Accept": "application/vnd.github+json", "User-Agent": "pramana-harness"}
-    tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    tok = _gh_token()
     if tok:
         h["Authorization"] = f"Bearer {tok}"
     return h
+
+
+EMBEDDED_RE = re.compile(r'<script type="application/json" data-target="react-app\.embeddedData">(.*?)</script>', re.S)
+
+
+def _issue_from_html(owner: str, repo: str, number: int) -> Optional["Issue"]:
+    """Last resort when the API is rate-limited: read the public issue page."""
+    url = f"https://github.com/{owner}/{repo}/issues/{number}"
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 pramana"}) as c:
+            r = c.get(url)
+        if r.status_code != 200:
+            return None
+        for m in EMBEDDED_RE.finditer(r.text):
+            try:
+                data = json.loads(m.group(1))
+            except ValueError:
+                continue
+            payload = data.get("payload") or {}
+            issue = payload.get("preloadedQuery", {}).get("response", {}).get("data", {}).get("repository", {}).get("issue") if isinstance(payload.get("preloadedQuery"), dict) else None
+            issue = issue or payload.get("issue") or payload.get("preloadedIssue")
+            if isinstance(issue, dict) and (issue.get("body") or issue.get("bodyText") or issue.get("title")):
+                body = issue.get("body") or issue.get("bodyText") or ""
+                return Issue(title=issue.get("title", ""), body=body, url=url, number=number, repo_slug=f"{owner}/{repo}")
+        # plain fallback: <title> + the first comment's markdown body
+        title = re.search(r"<title>(.*?)</title>", r.text, re.S)
+        body = re.search(r'<td class="d-block comment-body markdown-body[^"]*">(.*?)</td>', r.text, re.S)
+        if title:
+            text = re.sub(r"<[^>]+>", "", body.group(1)) if body else ""
+            name = html.unescape(title.group(1)).split(" · ")[0].strip()
+            if text.strip():
+                return Issue(title=name, body=html.unescape(text).strip(), url=url, number=number, repo_slug=f"{owner}/{repo}")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
 
 
 def fetch_github_issue(owner: str, repo: str, number: int, max_comments: int = 6) -> Issue:
@@ -98,7 +149,16 @@ def fetch_github_issue(owner: str, repo: str, number: int, max_comments: int = 6
     with httpx.Client(timeout=30, headers=_gh_headers(), follow_redirects=True) as c:
         r = c.get(base)
         if r.status_code != 200:
-            raise RuntimeError(f"GitHub API returned {r.status_code} for {owner}/{repo}#{number}: {r.text[:200]}")
+            alt = _issue_from_html(owner, repo, number)
+            if alt is not None:
+                return alt
+            hint = ""
+            if r.status_code in (403, 429) and "rate limit" in r.text.lower():
+                hint = ("\nGitHub rate-limits unauthenticated requests. Export GITHUB_TOKEN (any read-only token), "
+                        "run `gh auth login`, or paste the issue text / a file path instead of the URL.")
+            elif r.status_code == 404:
+                hint = "\nCheck the URL (a private repository needs GITHUB_TOKEN)."
+            raise RuntimeError(f"could not fetch {owner}/{repo}#{number}: GitHub returned {r.status_code}.{hint}")
         d = r.json()
         comments: List[str] = []
         if d.get("comments"):
