@@ -65,6 +65,42 @@ def compact_hard(messages: List[Dict[str, Any]], keep_recent: int = 4) -> int:
     return changed
 
 
+SHRINKABLE = ("<issue>", "<repository>", "<localization_hints>", "<issue_code_run_by_harness>",
+              "<previous_attempt>", "<acceptance_criteria>")
+
+
+def shrink_initial(messages: List[Dict[str, Any]], factor: float = 0.5, floor: int = 600) -> int:
+    """Last-resort for a small context window: shorten the sections of the first user message.
+    The issue's opening lines matter most, so each section keeps its head and a little of its tail."""
+    import re
+
+    first = next((m for m in messages if m["role"] == "user"), None)
+    if first is None:
+        return 0
+    text = first.get("content") or ""
+    saved = 0
+
+    def shrink(m):
+        body = m.group(2)
+        keep = max(floor, int(len(body) * factor))
+        if len(body) <= keep + 200:
+            return m.group(0)
+        head = body[: int(keep * 0.75)].rstrip()
+        tail = body[-int(keep * 0.25):].lstrip()
+        note = f"\n[... {len(body) - keep} characters elided to fit the context window ...]\n"
+        return m.group(1) + head + note + tail + m.group(3)
+
+    for tag in SHRINKABLE:
+        name = tag.strip("<>")
+        new = re.sub(rf"(<{name}>)(.*?)(</{name}>)", shrink, text, flags=re.S)
+        if new != text:
+            saved += len(text) - len(new)
+            text = new
+    if saved:
+        first["content"] = text
+    return saved
+
+
 def strip_private(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Drop harness-private keys (prefixed with _) before sending to a backend."""
     out = []

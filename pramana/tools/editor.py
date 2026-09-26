@@ -128,6 +128,26 @@ def syntax_error(path: Path, content: str) -> Optional[str]:
     return None
 
 
+def read_text(p: Path) -> Tuple[str, str, bool]:
+    """Return (text with \n endings, dominant line ending, had BOM)."""
+    raw = p.read_bytes()
+    bom = raw.startswith(b"\xef\xbb\xbf")
+    if bom:
+        raw = raw[3:]
+    text = raw.decode("utf-8", errors="replace")
+    crlf = text.count("\r\n")
+    ending = "\r\n" if crlf and crlf >= text.count("\n") - crlf else "\n"
+    return text.replace("\r\n", "\n"), ending, bom
+
+
+def write_text(p: Path, text: str, ending: str, bom: bool) -> None:
+    """Write back in the file's original style, so the diff stays minimal."""
+    if ending == "\r\n":
+        text = text.replace("\n", "\r\n")
+    data = text.encode("utf-8")
+    p.write_bytes((b"\xef\xbb\xbf" + data) if bom else data)
+
+
 class Editor:
     def __init__(self, root: Path, scratch: Path, index: Optional[SymbolIndex] = None) -> None:
         self.root = root.resolve()
@@ -136,6 +156,7 @@ class Editor:
         self.history: Dict[str, List[Optional[str]]] = {}
         self.touched: List[str] = []  # repo-relative paths written by the agent, in order
         self.created: List[str] = []  # repo-relative paths the agent deliberately created
+        self.styles: Dict[str, Tuple[str, bool]] = {}
         self.states: Dict[str, List[str]] = {}  # content hashes per file, to detect back-and-forth edits
         self.oscillations = 0
 
@@ -159,9 +180,10 @@ class Editor:
         except ValueError:
             return str(p)
 
-    def _record(self, p: Path, old: Optional[str]) -> None:
+    def _record(self, p: Path, old: Optional[str], ending: str = "\n", bom: bool = False) -> None:
         key = str(p)
         self.history.setdefault(key, []).append(old)
+        self.styles[key] = (ending, bom)
         r = self.rel(p)
         if r not in self.touched:
             self.touched.append(r)
@@ -182,7 +204,7 @@ class Editor:
             raise EditError(f"cannot read {path}: {e}")
         if b"\x00" in raw[:4096]:
             raise EditError(f"{path} looks like a binary file ({len(raw)} bytes); not displaying")
-        text = raw.decode("utf-8", errors="replace")
+        text = raw.decode("utf-8", errors="replace").lstrip("\ufeff").replace("\r\n", "\n")
         lines = text.split("\n")
         if lines and lines[-1] == "":
             lines = lines[:-1]
@@ -285,7 +307,7 @@ class Editor:
             raise EditError("old_str must be non-empty (to add text use command=insert, to make a new file use command=create)")
         if new_str is None:
             new_str = ""
-        content = p.read_text(encoding="utf-8", errors="replace")
+        content, ending, bom = read_text(p)
         if old_str == new_str:
             raise EditError("old_str and new_str are identical; nothing to change")
 
@@ -308,9 +330,9 @@ class Editor:
             )
         else:
             new_content = content.replace(old_str, new_str) if replace_all else content.replace(old_str, new_str, 1)
-        return self._commit(p, content, new_content, new_str, note)
+        return self._commit(p, content, new_content, new_str, note, ending, bom)
 
-    def _commit(self, p: Path, before: str, after: str, new_str: str, note: str = "") -> str:
+    def _commit(self, p: Path, before: str, after: str, new_str: str, note: str = "", ending: str = "\n", bom: bool = False) -> str:
         before_err = syntax_error(p, before)
         after_err = syntax_error(p, after)
         if after_err and not before_err:
@@ -318,8 +340,8 @@ class Editor:
                 "Edit NOT applied: it would make the file unparseable.\n"
                 f"{after_err}\nFix the replacement text (check indentation, brackets, quotes) and try again."
             )
-        p.write_text(after, encoding="utf-8")
-        self._record(p, before)
+        write_text(p, after, ending, bom)
+        self._record(p, before, ending, bom)
         import hashlib
 
         hist = self.states.setdefault(str(p), [hashlib.sha1(before.encode()).hexdigest()])
@@ -434,7 +456,7 @@ class Editor:
         p = self.resolve(path, for_write=True)
         if not p.is_file():
             raise EditError(f"file does not exist: {path}")
-        content = p.read_text(encoding="utf-8", errors="replace")
+        content, ending, bom = read_text(p)
         lines = content.split("\n")
         try:
             at = int(insert_line)
@@ -443,7 +465,7 @@ class Editor:
         if at < 0 or at > len(lines):
             raise EditError(f"insert_line {at} is out of range (file has {len(lines)} lines)")
         new_lines = lines[:at] + (new_str or "").split("\n") + lines[at:]
-        return self._commit(p, content, "\n".join(new_lines), new_str or "")
+        return self._commit(p, content, "\n".join(new_lines), new_str or "", "", ending, bom)
 
     def undo_edit(self, path: str) -> str:
         p = self.resolve(path, for_write=True)
@@ -455,7 +477,8 @@ class Editor:
             if p.exists():
                 p.unlink()
             return f"Undid creation of {self.rel(p)} (file removed)."
-        p.write_text(prev, encoding="utf-8")
+        ending, bom = self.styles.get(str(p), ("\n", False))
+        write_text(p, prev, ending, bom)
         if self.index is not None:
             self.index.invalidate(self.rel(p))
         return f"Reverted the last edit to {self.rel(p)}."

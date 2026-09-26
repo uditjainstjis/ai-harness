@@ -13,7 +13,7 @@ from ..llm import ChatModel, ContextOverflow, LLMError
 from ..llm.base import ToolCall, Usage, short_error
 from ..tools import ToolResult, Toolbox, canonicalize
 from . import prompts
-from .context import compact, compact_hard, estimate_tokens, strip_private
+from .context import compact, compact_hard, estimate_tokens, shrink_initial, strip_private
 from .events import Events
 from .verify import Gate, Verification
 
@@ -162,9 +162,19 @@ class Attempt:
             try:
                 return self.model.chat(strip_private(messages), tools=self.toolbox.specs(), temperature=temperature)
             except ContextOverflow:
-                self.events.emit("log", level="warn", message="context overflow: compacting transcript")
-                if compact_hard(messages, keep_recent=max(2, self.keep_recent // 2 - attempt)) == 0 and attempt >= 1:
-                    return None
+                freed = compact_hard(messages, keep_recent=max(2, self.keep_recent // 2 - attempt))
+                if freed:
+                    self.events.emit("log", level="warn", message=f"context overflow: elided {freed} old observations")
+                else:
+                    # nothing left to elide in the transcript: the fixed prompt itself is too big
+                    freed = shrink_initial(messages, factor=0.5 if attempt < 2 else 0.25)
+                    if freed:
+                        self.events.emit("log", level="warn",
+                                         message=f"context overflow: shortened the task description by {freed} characters")
+                    else:
+                        self.events.emit("log", level="error",
+                                         message="the prompt does not fit this model's context window even after compaction")
+                        return None
             except LLMError as e:
                 msg = str(e)
                 if "authentication" in msg.lower() or "HTTP 401" in msg or "HTTP 403" in msg:

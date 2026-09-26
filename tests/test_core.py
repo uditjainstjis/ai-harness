@@ -356,3 +356,18 @@ def test_text_messages_always_carry_the_tool_contract():
     with_system = to_text_messages([{"role": "system", "content": "s"}, {"role": "user", "content": "do it"}], TOOL_SPECS)
     assert sum(1 for m in with_system if m["role"] == "system") == 1
     assert "How to call tools" in with_system[0]["content"]
+
+
+def test_editor_preserves_crlf_and_bom(tmp_path):
+    repo = make_repo(tmp_path, {"keep.txt": "x\n"})
+    crlf = repo / "win.py"
+    crlf.write_bytes(b"\xef\xbb\xbfdef f():\r\n    return 1\r\n")
+    ed = Editor(repo, repo / ".pramana")
+    out = ed.view("win.py")
+    assert "\r" not in out and "﻿" not in out  # shown normalised
+    ed.str_replace("win.py", "    return 1", "    return 2")
+    raw = crlf.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf") and b"\r\n" in raw and b"return 2" in raw
+    assert b"\n\n" not in raw.replace(b"\r\n", b"\n\n").replace(b"\n\n", b"\r\n")  # no stray bare LF
+    ed.undo_edit("win.py")
+    assert crlf.read_bytes() == b"\xef\xbb\xbfdef f():\r\n    return 1\r\n"
