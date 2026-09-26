@@ -92,6 +92,11 @@ class OpenAICompatLLM:
         self._use_max_completion = model.startswith(("o1", "o3", "o4", "gpt-5")) and provider == "openai"
         # reasoning models trained to see their own earlier analysis inside a tool-calling loop
         self.reasoning_window = 6 if "gpt-oss" in model.lower() else 0
+        # DeepSeek V4 (thinking mode, the default) rejects a tool-carrying request with HTTP 400 unless
+        # EVERY earlier assistant message carries its reasoning_content. Learned from the first reply
+        # that has one, or from that 400 itself.
+        self.reasoning_field = ""
+        self.passback_all = False
         self.text_mode_stops: List[str] = []  # set by ChatModel when it drives this backend in text mode
         headers = {"Content-Type": "application/json"}
         self.api_version = os.environ.get("AI_API_VERSION", "").strip()
@@ -110,7 +115,8 @@ class OpenAICompatLLM:
 
     # ------------------------------------------------------------------ wire format
     @staticmethod
-    def _to_wire(messages: List[Dict[str, Any]], tool_names: bool = True, reasoning_window: int = 0) -> List[Dict[str, Any]]:
+    def _to_wire(messages: List[Dict[str, Any]], tool_names: bool = True, reasoning_window: int = 0,
+                 reasoning_field: str = "", passback_all: bool = False) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         asst_idx = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
         keep_reasoning = set(asst_idx[-reasoning_window:]) if reasoning_window > 0 else set()
@@ -118,8 +124,12 @@ class OpenAICompatLLM:
             role = m["role"]
             if role == "assistant":
                 wm: Dict[str, Any] = {"role": "assistant", "content": m.get("content") or ""}
-                if i in keep_reasoning and m.get("reasoning"):
-                    wm["reasoning"] = m["reasoning"]
+                if passback_all:
+                    wm[reasoning_field or "reasoning_content"] = m.get("reasoning") or ""
+                elif i in keep_reasoning and m.get("reasoning"):
+                    wm[reasoning_field or "reasoning"] = m["reasoning"]
+                if m.get("reasoning_details"):
+                    wm["reasoning_details"] = m["reasoning_details"]
                 tcs = m.get("tool_calls") or []
                 if tcs:
                     wm["tool_calls"] = [
@@ -155,7 +165,8 @@ class OpenAICompatLLM:
     # ------------------------------------------------------------------ request
     def _payload(self, messages, tools, temperature) -> Dict[str, Any]:
         p: Dict[str, Any] = {"model": self.model, "messages": self._to_wire(
-            messages, tool_names=self.provider != "openai", reasoning_window=self.reasoning_window)}
+            messages, tool_names=self.provider != "openai", reasoning_window=self.reasoning_window,
+            reasoning_field=self.reasoning_field, passback_all=self.passback_all)}
         if tools:
             p["tools"] = self._tools_to_wire(tools)
             if "parallel_tool_calls" not in self._dropped and self.provider in ("openai", "openrouter", "groq", "together", "fireworks"):
@@ -183,8 +194,13 @@ class OpenAICompatLLM:
         """Drop/rename a parameter the endpoint complained about. True if we changed something."""
         low = err_text.lower()
         changed = False
-        if "reasoning" in low and self.reasoning_window and "reasoning_effort" not in low:
+        if "reasoning_content" in low and "missing" in low:
+            if not self.passback_all:  # DeepSeek thinking mode: every assistant turn needs its reasoning back
+                self.passback_all, self.reasoning_field = True, "reasoning_content"
+                changed = True
+        elif "reasoning" in low and (self.reasoning_window or self.passback_all) and "reasoning_effort" not in low:
             self.reasoning_window = 0  # endpoint rejects passed-back reasoning: stop sending it
+            self.passback_all = False
             changed = True
         for param in ("temperature", "parallel_tool_calls", "reasoning_effort", "seed", "top_p", "stop"):
             if param in low and param in payload and param not in self._dropped:
@@ -280,6 +296,11 @@ class OpenAICompatLLM:
         reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
         if isinstance(reasoning, (dict, list)):
             reasoning = json.dumps(reasoning)[:4000]
+        if msg.get("reasoning_content") and not self.reasoning_field:
+            # this API returns reasoning_content: DeepSeek-style, which wants all of it back
+            self.reasoning_field, self.passback_all = "reasoning_content", True
+        elif msg.get("reasoning") and not self.reasoning_field:
+            self.reasoning_field = "reasoning"
         calls: List[ToolCall] = []
         for tc in msg.get("tool_calls") or []:
             fn = tc.get("function") or {}
@@ -309,6 +330,7 @@ class OpenAICompatLLM:
             stop_reason=choice.get("finish_reason") or "",
             latency_s=latency,
             reasoning=reasoning if isinstance(reasoning, str) else "",
+            reasoning_details=msg.get("reasoning_details") or None,
         )
 
     def list_models(self) -> List[str]:

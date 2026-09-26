@@ -131,3 +131,40 @@ def test_azure_style_endpoint(monkeypatch):
     assert resp.text == "hi"
     assert req["headers"].get("api-key") == "azkey" and "Authorization" not in req["headers"]
     assert "/openai/deployments/my-deployment/chat/completions" in req["path"] and "api-version=" in req["path"]
+
+
+def test_deepseek_thinking_mode_gets_all_reasoning_back(monkeypatch):
+    """DeepSeek V4 thinks by default and rejects (HTTP 400) any tool-carrying request whose history has an
+    assistant turn without reasoning_content. Pramana must learn that from the first reply and send it all."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    reply = lambda i: {"choices": [{"message": {"role": "assistant", "content": None, "reasoning_content": f"thought {i}",  # noqa: E731
+                                                "tool_calls": [{"id": f"c{i}", "type": "function",
+                                                                "function": {"name": "bash", "arguments": "{\"command\": \"ls\"}"}}]},
+                                    "finish_reason": "tool_calls"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}}
+    srv = FakeServer([(200, reply(1)), (200, reply(2))])
+    try:
+        llm = OpenAICompatLLM(srv.url, "sk-test", "deepseek-flash", provider="deepseek")
+        hist = [{"role": "system", "content": "sys"}, {"role": "user", "content": "fix it"},
+                {"role": "assistant", "content": "earlier turn with no reasoning"}, {"role": "user", "content": "go on"}]
+        r1 = llm.chat(hist, tools=TOOLS)
+        hist += [r1.as_message(), {"role": "tool", "tool_call_id": "c1", "name": "bash", "content": "a.py"}]
+        llm.chat(hist, tools=TOOLS)
+    finally:
+        srv.close()
+    sent = [m for m in srv.requests[1]["body"]["messages"] if m["role"] == "assistant"]
+    assert all("reasoning_content" in m for m in sent)  # every assistant turn, even the one without reasoning
+    assert sent[-1]["reasoning_content"] == "thought 1"
+
+
+def test_missing_reasoning_content_400_turns_passback_on(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    ok = {"choices": [{"message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}], "usage": {}}
+    srv = FakeServer([(400, {"error": {"message": "Missing `reasoning_content` field in the assistant message at message index 2."}}),
+                      (200, ok)])
+    try:
+        llm = OpenAICompatLLM(srv.url, "sk-test", "some-model", provider="openai")
+        resp = llm.chat(HISTORY, tools=TOOLS)
+    finally:
+        srv.close()
+    assert resp.text == "done"
+    assert all("reasoning_content" in m for m in srv.requests[1]["body"]["messages"] if m["role"] == "assistant")

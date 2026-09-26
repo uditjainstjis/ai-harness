@@ -104,13 +104,18 @@ class LLMResponse:
     stop_reason: str = ""
     latency_s: float = 0.0
     reasoning: str = ""
+    reasoning_details: Any = None  # OpenRouter's structured reasoning, passed back verbatim
 
     def as_message(self) -> Dict[str, Any]:
         msg: Dict[str, Any] = {"role": "assistant", "content": self.text or ""}
         if self.tool_calls:
             msg["tool_calls"] = [tc.as_dict() for tc in self.tool_calls]
         if self.reasoning:
-            msg["reasoning"] = self.reasoning[:6000]
+            # kept whole: DeepSeek-style APIs require the exact reasoning back, and an unchanged
+            # prefix is what their prompt cache matches on
+            msg["reasoning"] = self.reasoning[:200_000]
+        if self.reasoning_details:
+            msg["reasoning_details"] = self.reasoning_details
         return msg
 
 
