@@ -221,6 +221,9 @@ def to_text_messages(messages: List[Dict[str, Any]], tools: List[ToolSpec]) -> L
         else:
             out.append({"role": role, "content": content})
 
+    if tools_prompt and not any(m["role"] == "system" for m in messages):
+        out.append({"role": "system", "content": tools_prompt})  # never drop the tool contract
+
     for m in messages:
         role = m["role"]
         if role == "system":

@@ -348,3 +348,11 @@ def test_inline_script_nudge(tmp_path):
     tb.execute(ToolCall("c", "str_replace_editor", {"command": "create", "path": ".pramana/repro.py", "file_text": "assert False\n"}))
     a._nudged.clear()
     assert not any("reproduction file" in n for n in a._guards())
+
+
+def test_text_messages_always_carry_the_tool_contract():
+    only_user = to_text_messages([{"role": "user", "content": "do it"}], TOOL_SPECS)
+    assert only_user[0]["role"] == "system" and "How to call tools" in only_user[0]["content"]
+    with_system = to_text_messages([{"role": "system", "content": "s"}, {"role": "user", "content": "do it"}], TOOL_SPECS)
+    assert sum(1 for m in with_system if m["role"] == "system") == 1
+    assert "How to call tools" in with_system[0]["content"]
