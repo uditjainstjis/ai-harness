@@ -80,7 +80,10 @@
     <div class="head-right"><button class="btn stop-btn" id="batch-stop" onclick="stopBatch()">Stop all</button>
       <div id="batch-status" class="status-pill running"><span class="spin"></span>Working</div></div>
   </div>
-  <div class="card batch-card"><table class="batch-table"><thead><tr><th>Issue</th><th>Status</th><th class="num">Time</th><th class="num">Tokens</th><th>Pull request</th></tr></thead><tbody id="batch-rows"></tbody></table></div>
+  <div class="batch-clock"><div><b id="batch-clock">0s</b><span>total, first issue to last</span></div>
+    <div><b id="batch-verified">0</b><span>verified</span></div><div><b id="batch-parallel">0</b><span>running in parallel</span></div>
+    <div><b id="batch-calls">0</b><span>model calls</span></div></div>
+  <div class="card batch-card"><table class="batch-table"><thead><tr><th>Issue</th><th>Status</th><th class="num">Time</th><th>Where the time went</th><th class="num">Tokens</th><th>Pull request</th></tr></thead><tbody id="batch-rows"></tbody></table></div>
   <p class="note small muted">Each issue starts from the original code and is proven on its own; a proven fix is committed to its own branch <code>pramana/issue-N</code>, so every pull request contains exactly one fix.</p>
 </main>
 

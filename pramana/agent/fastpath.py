@@ -35,7 +35,7 @@ FAST_PROMPT = """You are fixing a GitHub issue in the repository at {root}. You 
 {example_test}
 The project's tests run with: {test_command}
 
-Reply in exactly this format.
+Reply in exactly this format, starting directly with "DIAGNOSIS:" (no preamble, no thinking out loud).
 
 DIAGNOSIS: <one or two sentences: the root cause>
 
@@ -116,6 +116,28 @@ def gather_files(root: Path, candidates: List[str], budget: int = 60000, per_fil
     return "\n".join(parts)
 
 
+PATHISH = re.compile(r"^[\w@.+-][\w@.+/-]*\.[A-Za-z0-9]{1,8}$|^[\w@.+-]+(?:/[\w@.+-]+)+$")
+
+
+def _path_above(before: str) -> str:
+    """The file path written above an edit block, tolerating blank lines, markdown and labels."""
+    for line in reversed(before.splitlines()[-6:]):
+        raw = line.strip()
+        if not raw or raw.startswith("```"):
+            continue
+        cand = re.sub(r"^(?:#+\s*|[-*]\s+|\d+[.)]\s+)", "", raw)
+        cand = cand.strip("*_` ")
+        cand = re.sub(r"^(?:file(?:name)?|path)\s*[:=]\s*", "", cand, flags=re.I).strip("*_` ")
+        cand = cand.rstrip(":").strip("*_` ")
+        if cand.startswith("./"):
+            cand = cand[2:]
+        if PATHISH.match(cand):
+            return cand
+        if len(raw.split()) > 3:          # a sentence: the path is not above this block
+            return ""
+    return ""
+
+
 def parse_reply(text: str) -> Tuple[str, List[Tuple[str, str, str]], str]:
     """-> (diagnosis, [(path, search, replace)], test_command)."""
     text = re.sub(r"```[\w+-]*\n?", "", text or "")
@@ -125,12 +147,7 @@ def parse_reply(text: str) -> Tuple[str, List[Tuple[str, str, str]], str]:
         diag = " ".join(m.group(1).split())
     edits = []
     for bm in BLOCK_RE.finditer(text):
-        before = text[:bm.start()].rstrip("\n").splitlines()
-        path = before[-1].strip() if before else ""
-        path = re.sub(r"^(?:File|Path|path|file):\s*", "", path).strip().strip("`*'\" ")
-        if path.startswith("./"):
-            path = path[2:]
-        edits.append((path, bm.group(1), bm.group(2)))
+        edits.append((_path_above(text[:bm.start()]), bm.group(1), bm.group(2)))
     cmd = ""
     mc = re.search(r"TEST_COMMAND:\s*`?([^\n`]+)`?", text)
     if mc:
@@ -166,11 +183,26 @@ class FastPath:
             test_command=self.info.test_command or "(unknown)", scratch=SCRATCH_DIRNAME, ext=ext)
         msgs = [{"role": "system", "content": "You are an expert software engineer. Answer in the exact format requested."},
                 {"role": "user", "content": prompt}]
-        resp = None
+        for rnd in (1, 2):             # a second round gets the exact reason the first one was not accepted
+            reply = self._ask(msgs, res)
+            if reply is None:
+                return self._done(res, t0)
+            self._keep(reply, rnd)
+            feedback = self._attempt(reply, res)
+            if res.ok or rnd == 2 or not feedback:
+                return self._done(res, t0)
+            self.events.emit("log", level="info", message=f"fast path round 2 ({res.stage}): {res.reason[:140]}")
+            msgs += [{"role": "assistant", "content": reply}, {"role": "user", "content": feedback}]
+            res.stage, res.reason, res.test_path = "", "", ""
+        return self._done(res, t0)
+
+    def _ask(self, msgs, res: FastResult) -> Optional[str]:
         for tries in range(3):   # a busy endpoint is not a hard issue: wait it out rather than escalate
             try:
                 resp = self.model.chat(msgs, tools=None, temperature=0.0)
-                break
+                text = resp.text or ""
+                self.events.emit("llm", text=text[:1500], total_tokens=self.model.usage.total_tokens, cached_tokens=0)
+                return text
             except (ModelUnresponsive, Cancelled):
                 raise                                  # no point escalating to more calls on a dead endpoint
             except Exception as e:  # noqa: BLE001 - the agent loop is the fallback
@@ -180,17 +212,57 @@ class FastPath:
                     time.sleep(15 * (tries + 1))
                     continue
                 res.stage, res.reason = "no-reply", short_error(e, 160)
-                return self._done(res, t0)
-        text = resp.text or ""
-        self.events.emit("llm", text=text[:1500], total_tokens=self.model.usage.total_tokens, cached_tokens=0)
-        res.diagnosis, res.edits, res.test_command = parse_reply(text)
+                return None
+        return None
+
+    def _keep(self, reply: str, rnd: int) -> None:
+        """The full reply goes into the run's scratch folder (moved into the evidence bundle)."""
+        try:
+            d = self.root / SCRATCH_DIRNAME
+            d.mkdir(exist_ok=True)
+            (d / f"fastpath_reply_{rnd}.txt").write_text(reply)
+        except OSError:
+            pass
+
+    def _resolve_path(self, search: str) -> str:
+        """No usable path given: the SEARCH text is copied from a file, so find the file that contains it."""
+        body = search.strip()
+        if not body:
+            return ""
+        first = body.splitlines()[0].strip()
+        for rel in list(getattr(self.info, "files", []) or [])[:5000]:
+            f = self.root / rel
+            try:
+                if not f.is_file() or f.stat().st_size > 500_000:
+                    continue
+                text = f.read_text(errors="replace")
+            except OSError:
+                continue
+            if first in text and (body in text or len(body.splitlines()) == 1):
+                return rel
+        return ""
+
+    def _attempt(self, reply: str, res: FastResult) -> str:
+        """Apply and prove one reply. '' when accepted (or not worth a retry), else the feedback for round 2."""
+        res.diagnosis, res.edits, res.test_command = parse_reply(reply)
         if not res.edits:
             res.stage, res.reason = "parse", "the reply contained no SEARCH/REPLACE edits"
-            return self._done(res, t0)
-        # apply
+            return ("Your reply contained no edits in the required format. Reply again: DIAGNOSIS:, then each edit as a "
+                    "file path line directly followed by a <<<<<<< SEARCH / ======= / >>>>>>> REPLACE block, then TEST_COMMAND:.")
+        fixed = []
+        for path, search, replace in res.edits:
+            if not path:
+                path = self._resolve_path(search) if search.strip() else ""
+                if not path and not search.strip():
+                    ext = ".py" if (self.info.primary_language or "").lower() == "python" else ".js"
+                    path = f"{SCRATCH_DIRNAME}/test_issue{ext}"
+            fixed.append((path, search, replace))
+        res.edits = fixed
         for path, search, replace in res.edits:
             self.events.emit("tool_call", name="str_replace_editor", brief=f"{'create' if not search.strip() else 'edit'} {path}")
             try:
+                if not path:
+                    raise RuntimeError("no file path was given for this edit and its SEARCH text is not in any file")
                 if not search.strip():
                     target = self.root / path
                     if target.exists() and not path.startswith(SCRATCH_DIRNAME + "/"):
@@ -204,12 +276,13 @@ class FastPath:
                                  meta={"edited": True})
             except Exception as e:  # noqa: BLE001
                 self.events.emit("tool_result", name="str_replace_editor", output=str(e)[:300], is_error=True)
-                res.stage, res.reason = "apply", f"edit to {path} could not be applied: {short_error(e, 200)}"
+                res.stage, res.reason = "apply", f"edit to {path or '(no path)'} could not be applied: {short_error(e, 200)}"
                 res.patch = self.git.patch()
                 self.git.reset_to_base()
-                return self._done(res, t0)
+                return (f"This edit could not be applied to {path or '(no path given)'}:\n{str(e)[:1500]}\n\n"
+                        "Nothing was changed. Reply again with ALL edits (SEARCH text copied exactly from the current file, "
+                        "the file path on the line directly above each block), the test file, and TEST_COMMAND.")
         res.patch = self.git.patch()
-        # prove: the gate runs the test (and related existing tests) on the original and on the patched code
         cmds = [res.test_command] if res.test_command else []
         if not cmds and res.test_path:
             cmds = [f"python -m pytest -q {res.test_path}" if res.test_path.endswith(".py") else f"node {res.test_path}"]
@@ -220,13 +293,17 @@ class FastPath:
                          checks=[{"command": c.command, "verdict": c.verdict, "origin": c.origin} for c in v.checks])
         bad = [c for c in v.checks if c.verdict in ("regression", "still_failing", "fails_after", "timeout", "fails_both")]
         if not (v.strength == "strong" and not bad):
+            no_fail = any(c.verdict == "passes_both" for c in v.checks) and not any(c.verdict == "fixes" for c in v.checks)
             res.stage = "proof"
-            res.reason = ("its test did not fail on the original code, so nothing proves the fix"
-                          if any(c.verdict == "passes_both" for c in v.checks) and not any(c.verdict == "fixes" for c in v.checks)
+            res.reason = ("its test did not fail on the original code, so nothing proves the fix" if no_fail
                           else (v.feedback or "the checks did not pass")[:600])
             self.git.reset_to_base()
-            return self._done(res, t0)
-        # one cheap second opinion; a real concern sends the (kept) fix on to the agent loop to complete
+            if no_fail:
+                return ("Your test PASSED on the original, unfixed code, so it does not show the bug. The edits were "
+                        "reverted. Write a test that FAILS on the current code for exactly the reason in the issue (check the "
+                        "concrete behaviour the issue describes), then give the source edits, the test and TEST_COMMAND again.")
+            return ("Your change was run on the original and on the patched code and was not accepted:\n"
+                    + (v.feedback or "")[-2500:] + "\n\nThe edits were reverted. Reply again with corrected edits, the test and TEST_COMMAND.")
         if self.reviewer is not None:
             self.events.emit("phase", name="review")
             review = self.reviewer(v)
@@ -234,9 +311,9 @@ class FastPath:
             self.events.emit("review", attempt=0, **(review or {}))
             if review and review.get("verdict") == "revise" and review.get("concerns"):
                 res.stage, res.reason = "review", "the reviewer asked for changes"
-                return self._done(res, t0)
-        res.ok, res.stage, res.reason = True, "accepted", "proven in one call"
-        return self._done(res, t0)
+                return ""
+        res.ok, res.stage, res.reason = True, "accepted", "proven"
+        return ""
 
     def _done(self, res: FastResult, t0: float) -> FastResult:
         res.elapsed_s = round(time.time() - t0, 1)

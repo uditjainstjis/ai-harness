@@ -391,7 +391,8 @@ async function startBatch() {
   catch (e) { $("#pick-error").textContent = e.message; }
 }
 const DONE = new Set(["verified", "patched", "no_patch", "error", "interrupted", "cancelled"]);
-let walkQueue = null;
+let walkQueue = null, batchStart = null, batchEnd = null;
+setInterval(() => { if (batchStart && !$("#batch").hidden) $("#batch-clock").textContent = fmtTime(((batchEnd || Date.now() / 1000) - batchStart)); }, 500);
 async function openBatch(id) {
   lastBatch = id;
   const tick = async () => {
@@ -402,6 +403,10 @@ async function openBatch(id) {
     $("#batch-progress").textContent = `${done} / ${b.items.length} done · ${b.items.filter((x) => x.status === "verified").length} verified · ${b.running_now || 0} running in parallel` + (b.auto_pr ? " · PRs open automatically" : "");
     $("#batch-model").textContent = modelInfo ? `${PRETTY[modelInfo.provider] || modelInfo.provider} API · ${modelInfo.model}` : "";
     const finished = b.status === "done" || b.status === "stopped" || String(b.status).startsWith("error");
+    batchStart = b.created; batchEnd = b.ended;
+    $("#batch-verified").textContent = b.items.filter((x) => x.status === "verified").length + " / " + b.items.length;
+    $("#batch-parallel").textContent = b.running_now || 0;
+    $("#batch-calls").textContent = b.items.reduce((a, x) => a + (x.calls || 0), 0);
     $("#batch-stop").hidden = finished;
     const el = $("#batch-status");
     el.className = "status-pill " + (finished ? (String(b.status).startsWith("error") ? "failed" : "verified") : "running");
@@ -413,8 +418,12 @@ async function openBatch(id) {
       const prCell = pr ? `<a href="${esc(pr.url)}" target="_blank" onclick="event.stopPropagation()">open PR ↗</a>`
         : (x.branch ? `<button class="btn" onclick="event.stopPropagation();openGithub('pr',false,'${x.run_id}')">Create PR</button>` : '<span class="muted">–</span>');
       const live = !DONE.has(x.status) && x.status !== "queued" && x.now ? `<div class="now">↳ ${esc(x.now)}${x.calls ? ` · ${x.calls} model calls` : ""}</div>` : "";
+      const sp = x.split || null;
+      const tot = sp ? Object.values(sp).reduce((a, n) => a + n, 0) : 0;
+      const bar = sp && tot > 0 ? `<div class="split">${["setup", "model", "tools", "proof"].map((k) => sp[k] > 0 ? `<span class="seg ${k}" style="flex:${sp[k]}" title="${k}: ${sp[k]}s"></span>` : "").join("")}</div>
+        <div class="split-lbl">model ${Math.round(sp.model)}s · tools ${Math.round(sp.tools)}s · proof ${Math.round(sp.proof)}s${sp.setup ? ` · setup ${Math.round(sp.setup)}s` : ""} · ${x.calls || 0} calls</div>` : "";
       return `<tr class="${x.run_id ? "clickable" : ""}" onclick="${x.run_id ? `go('run','${x.run_id}')` : ""}"><td><b>#${x.number}</b> ${esc(x.title)}${live}</td>
-        <td><span class="status-pill ${x.status === "queued" ? "" : p.cls}">${esc(lbl)}</span></td><td class="num">${x.elapsed_s ? fmtTime(x.elapsed_s) : ""}</td>
+        <td><span class="status-pill ${x.status === "queued" ? "" : p.cls}">${esc(lbl)}</span></td><td class="num">${x.elapsed_s ? fmtTime(x.elapsed_s) : ""}</td><td class="split-cell">${bar}</td>
         <td class="num">${x.tokens ? fmtTok(x.tokens) : ""}</td><td>${prCell}</td></tr>`;
     }).join("");
     if (finished) {

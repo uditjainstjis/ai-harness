@@ -118,9 +118,21 @@ class Run:
         self.dir = (home / self.id) if home else None
         self._loaded = True
         self.now, self.phase, self.calls, self.auto_pr = "", "", 0, False
+        self.split = {"setup": 0.0, "model": 0.0, "tools": 0.0, "proof": 0.0, "other": 0.0}
+        self._last_t = 0.0
 
     def _track(self, kind: str, d: Dict[str, Any]) -> None:
-        """One human line for 'what is it doing right now' (shown live in the batch view)."""
+        """One human line for 'what is it doing right now' (shown live in the batch view), and where the
+        time goes: each gap between events is charged to what ended it (a model reply, a tool, the proof)."""
+        t = d.get("t")
+        if kind == "stage" and d.get("name") == "ready":
+            self.split["setup"] = round(time.time() - self.created, 1)
+        if isinstance(t, (int, float)):
+            gap = max(0.0, t - self._last_t)
+            bucket = ("model" if kind in ("llm", "wait") else "tools" if kind == "tool_result"
+                      else "proof" if kind in ("verify", "checkpoint", "independent_test", "review") else "other")
+            self.split[bucket] = round(self.split[bucket] + gap, 1)
+            self._last_t = t
         if kind == "phase":
             self.phase = d.get("name", self.phase)
         elif kind == "tool_call":
@@ -143,7 +155,7 @@ class Run:
     def push(self, kind: str, data: Dict[str, Any]) -> None:
         self._track(kind, data)
         with self.cond:
-            ev = {"seq": len(self.events), "kind": kind, **_plain(data)}
+            ev = {"seq": len(self.events), "kind": kind, "at": round(time.time(), 2), **_plain(data)}
             self.events.append(ev)
             if self.dir:
                 with open(self.dir / "events.jsonl", "a") as fh:
@@ -184,7 +196,7 @@ class Run:
                 "tokens": (r.get("usage") or {}).get("total_tokens"), "want_pr": self.want_pr,
                 "github": self.github, "model": self.model, "history_dir": str(self.dir or ""),
                 "batch_id": getattr(self, "batch_id", ""), "issue": getattr(self, "issue_number", None),
-                "now": self.now, "phase": self.phase, "calls": self.calls}
+                "now": self.now, "phase": self.phase, "calls": self.calls, "split": self.split}
 
 
 class Batch:
@@ -197,6 +209,7 @@ class Batch:
         self.slug, self.numbers, self.want_pr, self.titles = slug, numbers, want_pr, titles
         self.items: List[Dict[str, Any]] = [{"number": n, "title": titles.get(n, ""), "run_id": "", "status": "queued"} for n in numbers]
         self.status, self.created, self.repo_path, self.base = "starting", time.time(), "", ""
+        self.ended: Optional[float] = None
         self.home = home / "batches"
         self.home.mkdir(parents=True, exist_ok=True)
 
@@ -209,9 +222,10 @@ class Batch:
                           "tokens": (r.get("usage") or {}).get("total_tokens"), "elapsed_s": r.get("elapsed_s"),
                           "branch": r.get("branch", ""), "github": run.github if run else [],
                           "now": run.now if run else "", "phase": run.phase if run else "", "calls": run.calls if run else 0,
-                          "started": run.created if run else None})
+                          "started": run.created if run else None, "split": run.split if run else None})
         return {"id": self.id, "repo": self.slug, "status": self.status, "created": self.created, "want_pr": self.want_pr,
                 "auto_pr": self.auto_pr, "running_now": sum(1 for x in items if x["status"] in ("running", "starting", "preparing")),
+                "ended": self.ended, "elapsed_s": round((self.ended or time.time()) - self.created, 1),
                 "repo_path": self.repo_path, "items": items}
 
     def save(self, runs: Dict[str, "Run"]) -> None:
@@ -393,15 +407,16 @@ class Studio:
                     _git(dest, *who, "commit", "-q", "-m", f"Fix #{n}: {it['title']}".strip(), "-m", f"Closes #{n}")
                     r["branch"], r["commit"], r["closes"] = branch, _git(dest, "rev-parse", "HEAD"), n
                     run.save("result.json", r)
-                    if batch.auto_pr:            # the user asked for pull requests without being asked each time
+                    if batch.auto_pr and r.get("status") == "verified":   # automatic only when proven
                         self._auto_pr(run)
                 with lock:
                     it["status"] = r.get("status") or run.status
                     batch.save(self.runs)
 
-            with ThreadPoolExecutor(max_workers=max(1, min(4, len(batch.items)))) as ex:
+            with ThreadPoolExecutor(max_workers=max(1, min(10, len(batch.items)))) as ex:   # all at once; the shared limiter paces the API
                 list(ex.map(one, batch.items))
             batch.status = "stopped" if getattr(batch, "cancelled", False) else "done"
+            batch.ended = time.time()
         except Exception as e:  # noqa: BLE001
             batch.status = f"error: {type(e).__name__}: {e}"[:300]
         batch.save(self.runs)
@@ -418,7 +433,7 @@ class Studio:
 
         def go() -> None:
             self._work(run)
-            if run.auto_pr and (run.result or {}).get("status") in ("verified", "patched") and (run.result or {}).get("patch"):
+            if run.auto_pr and (run.result or {}).get("status") == "verified" and (run.result or {}).get("patch"):
                 self._auto_pr(run)
         threading.Thread(target=go, daemon=True).start()
         return run
