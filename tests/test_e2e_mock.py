@@ -54,6 +54,7 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
     cfg = load_config()
     cfg.runs_dir = str(tmp_path / "runs")
     cfg.agent.max_attempts = 1
+    cfg.agent.fast_path = False          # this test drives the full agent loop
     model = ChatModel(MockLLM(script), "native", "mock", "mock")
     events = Events()
     seen = []
@@ -65,7 +66,7 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
     verdicts = [c.verdict for c in res.verification.checks]
     assert verdicts[0] == "fixes"
     independent = [c for c in res.verification.checks if c.origin == "independent"]
-    assert independent and independent[0].verdict == "fixes"
+    assert not independent               # the agent's own check already proves fail -> pass: no blind test needed
     assert not (repo / ".pramana").exists()  # scratch moved into the evidence bundle
     bundle = res.run_dir
     for name in ("report.md", "report.html", "patch.diff", "evidence.json", "trajectory.jsonl", "transcript_attempt1.json"):
@@ -73,6 +74,6 @@ def test_full_pipeline_with_scripted_model(tmp_path, monkeypatch):
     assert (bundle / "scratch" / "repro.py").exists()
     ev = json.loads((bundle / "evidence.json").read_text())
     assert ev["status"] == "verified" and ev["patch"]["files"] == 1
-    assert "verify" in seen and "review" in seen and "criteria" in seen
+    assert "verify" in seen and "criteria" in seen   # (a small, strongly proven fix skips the reviewer)
     first_user = json.loads((bundle / "transcript_attempt1.json").read_text())[1]["content"]
     assert "<acceptance_criteria>" in first_user and "mean([]) -> 0.0" in first_user

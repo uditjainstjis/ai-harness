@@ -73,6 +73,16 @@ def issue_body(result: Dict[str, Any], prompt: str) -> str:
 
 def preview(kind: str, repo_path: str, result: Dict[str, Any], prompt: str, title_hint: str) -> Dict[str, Any]:
     """What would be created, where. Read-only."""
+    out = _preview(kind, repo_path, result, prompt, title_hint)
+    if out.get("ok") and kind == "pr" and result.get("closes"):
+        n = result["closes"]
+        out["branch"] = result.get("branch") or out.get("branch")
+        out["title"] = out["title"] if out["title"].lower().startswith(("fix #", f"#{n}")) else f"Fix #{n}: {out['title'].lstrip('#0123456789 ')}"
+        out["body"] = f"Closes #{n}\n\n" + out.get("body", "")
+    return out
+
+
+def _preview(kind: str, repo_path: str, result: Dict[str, Any], prompt: str, title_hint: str) -> Dict[str, Any]:
     repo = Path(repo_path) if repo_path else None
     out: Dict[str, Any] = {"kind": kind, "ok": False}
     user = gh_user()
@@ -101,7 +111,8 @@ def preview(kind: str, repo_path: str, result: Dict[str, Any], prompt: str, titl
     return out
 
 
-def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", files: Optional[List[str]] = None) -> Dict[str, Any]:
+def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", files: Optional[List[str]] = None,
+           committed: bool = False) -> Dict[str, Any]:
     """Actually create the pull request / issue. Returns {ok, url} or {ok: False, error}."""
     repo = Path(repo_path)
     slug = _slug(repo)
@@ -122,14 +133,15 @@ def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", f
         base, can_push = meta.get("b") or "main", bool(meta.get("push"))
         branch = branch or "pramana/fix"
         git = ["git", "-c", f"user.name={user}", "-c", f"user.email={user}@users.noreply.github.com"]
-        code, out = _run(git + ["checkout", "-B", branch], cwd=repo)
-        if code != 0:
-            return {"ok": False, "error": "could not create the branch: " + out[-400:]}
-        for f in files or []:
-            _run(["git", "add", "--", f], cwd=repo)
-        code, out = _run(git + ["commit", "-m", title, "-m", "Prepared with Pramana; verified on the original and the patched code."], cwd=repo)
-        if code != 0 and "nothing to commit" not in out:
-            return {"ok": False, "error": "could not commit: " + out[-400:]}
+        if not committed:   # (a batch has already committed this issue's fix on its own branch)
+            code, out = _run(git + ["checkout", "-B", branch], cwd=repo)
+            if code != 0:
+                return {"ok": False, "error": "could not create the branch: " + out[-400:]}
+            for f in files or []:
+                _run(["git", "add", "--", f], cwd=repo)
+            code, out = _run(git + ["commit", "-m", title, "-m", "Prepared with Pramana; verified on the original and the patched code."], cwd=repo)
+            if code != 0 and "nothing to commit" not in out:
+                return {"ok": False, "error": "could not commit: " + out[-400:]}
         owner = slug.split("/")[0]
         if can_push:
             remote = f"https://github.com/{slug}.git"
@@ -137,7 +149,8 @@ def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", f
             _run(["gh", "repo", "fork", slug, "--clone=false", "--remote=false"], timeout=120)
             remote = f"https://github.com/{user}/{slug.split('/')[1]}.git"
             owner = user
-        push = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "-f", remote, f"HEAD:refs/heads/{branch}"]
+        src = f"refs/heads/{branch}" if committed else "HEAD"
+        push = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "-f", remote, f"{src}:refs/heads/{branch}"]
         code, out = _run(push, cwd=repo, timeout=300)
         if code != 0 and "shallow" in out.lower():
             _run(["git", "fetch", "--unshallow", "--quiet"], cwd=repo, timeout=900)

@@ -263,3 +263,19 @@ def ensure_repo(spec: str, workspace: Path, ref: str = "") -> Path:
     if ref:
         subprocess.run(["git", "checkout", "-q", ref], cwd=str(dest), check=False)
     return dest
+
+
+def list_github_issues(slug: str, state: str = "open", limit: int = 60) -> List[Dict[str, Any]]:
+    """Open issues of a GitHub repository (pull requests excluded), newest first."""
+    out: List[Dict[str, Any]] = []
+    with httpx.Client(timeout=30, headers=_gh_headers(), follow_redirects=True) as c:
+        r = c.get(f"https://api.github.com/repos/{slug}/issues", params={"state": state, "per_page": min(limit, 100)})
+        if r.status_code != 200:
+            raise RuntimeError(f"could not list the issues of {slug}: GitHub returned {r.status_code}")
+        for d in r.json():
+            if "pull_request" in d:
+                continue
+            out.append({"number": d.get("number"), "title": d.get("title", ""), "url": d.get("html_url", ""),
+                        "labels": [l.get("name", "") for l in d.get("labels", []) if isinstance(l, dict)],
+                        "body": (d.get("body") or "")[:600], "comments": d.get("comments", 0)})
+    return out

@@ -53,6 +53,31 @@ def _plain(o: Any) -> Any:
     return o
 
 
+ISSUE_NUMS = re.compile(r"(?:#|\bissues?\s*(?:no\.?|number)?\s*#?)(\d{1,6})\b", re.I)
+GENERIC_ISSUES = re.compile(r"\b(fix|solve|resolve|close|handle|address|tackle|work on|clear|do)\b[^.\n]{0,40}\b(issues|bugs|tickets)\b", re.I)
+
+
+def issues_intent(prompt: str) -> Any:
+    """[numbers] when specific issues are named, "all" for a short generic "fix the issues", else None."""
+    text = (prompt or "").strip()
+    if ISSUE_URL.search(text) or SHORT_ISSUE.match(text):
+        return None                              # a single issue link: an ordinary run
+    nums = []
+    for m in ISSUE_NUMS.finditer(text):
+        n = int(m.group(1))
+        if n not in nums:
+            nums.append(n)
+    more = re.findall(r"(?:,|\band\b|&)\s*#?(\d{1,6})\b", text) if nums else []
+    for n in map(int, more):
+        if n not in nums:
+            nums.append(n)
+    if nums:
+        return nums
+    if len(text) <= 90 and (GENERIC_ISSUES.search(text) or text.lower() in ("", "fix", "fix it", "fix everything", "fix all")):
+        return "all"
+    return None
+
+
 def interpret(prompt: str, repo: str) -> Dict[str, str]:
     """Work out (repo, task) from whatever the user typed. Never asks the user to be precise."""
     prompt, repo = (prompt or "").strip(), (repo or "").strip()
@@ -120,6 +145,7 @@ class Run:
             return None
         run = cls(inp.get("prompt", ""), inp.get("repo", ""), inp.get("test", ""), d.parent, inp.get("want_pr", False), d.name)
         run.created, run.title, run.model = inp.get("created", run.created), inp.get("title") or run.title, inp.get("model") or {}
+        run.batch_id, run.issue_number = inp.get("batch") or "", inp.get("issue")
         res = d / "result.json"
         run.result = json.loads(res.read_text()) if res.exists() else None
         run.status = "done" if run.result and run.result.get("status") != "error" else ("error" if run.result else "interrupted")
@@ -133,7 +159,47 @@ class Run:
         return {"id": self.id, "title": self.title, "repo": self.repo_spec, "status": self.status,
                 "created": self.created, "verdict": r.get("status"), "elapsed_s": r.get("elapsed_s"),
                 "tokens": (r.get("usage") or {}).get("total_tokens"), "want_pr": self.want_pr,
-                "github": self.github, "model": self.model, "history_dir": str(self.dir or "")}
+                "github": self.github, "model": self.model, "history_dir": str(self.dir or ""),
+                "batch_id": getattr(self, "batch_id", ""), "issue": getattr(self, "issue_number", None)}
+
+
+class Batch:
+    """Several GitHub issues, fixed one at a time. Each starts from the untouched base commit, is proven on
+    its own, and a proven fix is committed to its own branch (pramana/issue-N): one pull request per issue."""
+
+    def __init__(self, slug: str, numbers: List[int], want_pr: bool, home: Path, titles: Dict[int, str]) -> None:
+        self.id = "b" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
+        self.slug, self.numbers, self.want_pr, self.titles = slug, numbers, want_pr, titles
+        self.items: List[Dict[str, Any]] = [{"number": n, "title": titles.get(n, ""), "run_id": "", "status": "queued"} for n in numbers]
+        self.status, self.created, self.repo_path, self.base = "starting", time.time(), "", ""
+        self.home = home / "batches"
+        self.home.mkdir(parents=True, exist_ok=True)
+
+    def view(self, runs: Dict[str, "Run"]) -> Dict[str, Any]:
+        items = []
+        for it in self.items:
+            run = runs.get(it["run_id"]) if it["run_id"] else None
+            r = (run.result or {}) if run else {}
+            items.append({**it, "status": (r.get("status") or run.status) if run else it["status"],
+                          "tokens": (r.get("usage") or {}).get("total_tokens"), "elapsed_s": r.get("elapsed_s"),
+                          "branch": r.get("branch", ""), "github": run.github if run else []})
+        return {"id": self.id, "repo": self.slug, "status": self.status, "created": self.created, "want_pr": self.want_pr,
+                "repo_path": self.repo_path, "items": items}
+
+    def save(self, runs: Dict[str, "Run"]) -> None:
+        (self.home / f"{self.id}.json").write_text(json.dumps(self.view(runs), indent=1, default=str))
+
+
+def _git(repo: Path, *args: str, check: bool = False) -> str:
+    p = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True)
+    if check and p.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {p.stderr[-300:]}")
+    return p.stdout.strip()
+
+
+def _reset(repo: Path, base: str) -> None:
+    _git(repo, "checkout", "-q", "-f", base)
+    _git(repo, "clean", "-fdq", "-e", ".venv", "-e", "venv", "-e", "node_modules", "-e", ".pramana-env")
 
 
 class Studio:
@@ -143,6 +209,7 @@ class Studio:
         self.lock = threading.Lock()
         self.session_model: Dict[str, str] = {}   # set from the settings panel; never written to disk
         self._models_cache: Dict[Any, Any] = {}
+        self.batches: Dict[str, Batch] = {}
         try:
             self.home = Path(load_config(self.overrides).runs_dir) / "studio"
         except Exception:  # noqa: BLE001
@@ -219,6 +286,92 @@ class Studio:
         return self.model_info()
 
     # ------------------------------------------------------------------ runs
+    def issues_for(self, prompt: str, repo: str) -> Optional[Dict[str, Any]]:
+        """If the request is about a GitHub repo's issues, the list to choose from (else None)."""
+        from ..repo.issue import list_github_issues
+        it = interpret(prompt, repo)
+        intent = issues_intent(it["prompt"] if it["prompt"] else "")
+        if intent is None and it["prompt"]:
+            return None
+        m = re.search(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)", it["repo"]) or re.fullmatch(r"([\w.-]+)/([\w.-]+)", it["repo"])
+        if not m:
+            return None
+        slug = f"{m.group(1)}/{m.group(2)}"
+        issues = list_github_issues(slug)
+        if isinstance(intent, list) and len(intent) == 1:
+            return {"single": f"https://github.com/{slug}/issues/{intent[0]}", "repo": slug}
+        pre = intent if isinstance(intent, list) else [i["number"] for i in issues]
+        return {"select_issues": True, "repo": slug, "issues": issues, "preselect": pre}
+
+    def start_batch(self, slug: str, numbers: List[int], want_pr: bool) -> Batch:
+        from ..repo.issue import list_github_issues
+        if not numbers:
+            raise ValueError("Pick at least one issue.")
+        try:
+            titles = {i["number"]: i["title"] for i in list_github_issues(slug)}
+        except Exception:  # noqa: BLE001
+            titles = {}
+        batch = Batch(slug, numbers, want_pr, self.home, titles)
+        self.batches[batch.id] = batch
+        threading.Thread(target=self._batch_work, args=(batch,), daemon=True).start()
+        return batch
+
+    def _batch_work(self, batch: Batch) -> None:
+        """Every issue at once, each in its own local clone (own environment, own branch), so fixes cannot
+        interfere and each can become its own pull request. The fast path makes easy issues take seconds;
+        only the ones it cannot prove escalate to the full agent."""
+        from concurrent.futures import ThreadPoolExecutor
+        from .github import gh_user
+        try:
+            cfg = self.config()
+            workspace = Path(cfg.workspace_dir)
+            main = ensure_repo(batch.slug, workspace)
+            batch.repo_path, batch.status = str(main), "preparing"
+            batch.base = _git(main, "rev-parse", "HEAD", check=True)
+            origin = _git(main, "remote", "get-url", "origin") or f"https://github.com/{batch.slug}.git"
+            u = gh_user()
+            who = ["-c", f"user.name={u}", "-c", f"user.email={u}@users.noreply.github.com"] if u else \
+                ["-c", "user.name=Pramana", "-c", "user.email=pramana@localhost"]
+            batch.status = "running"
+            lock = threading.Lock()
+
+            def one(it: Dict[str, Any]) -> None:
+                n = it["number"]
+                dest = workspace / f"{main.name}-issue-{n}-{batch.id[-4:]}"
+                if dest.exists():
+                    shutil.rmtree(dest, ignore_errors=True)
+                subprocess.run(["git", "clone", "-q", str(main), str(dest)], capture_output=True)
+                _git(dest, "remote", "set-url", "origin", origin)      # pull requests go to GitHub, not the local copy
+                _git(dest, "checkout", "-q", batch.base)
+                run = Run(f"https://github.com/{batch.slug}/issues/{n}", str(dest), "", self.home, batch.want_pr)
+                run.batch_id, run.issue_number = batch.id, n
+                run.title = f"#{n} {it['title']}".strip()
+                self._register(run)
+                with lock:
+                    it["run_id"], it["status"] = run.id, "running"
+                    batch.save(self.runs)
+                self._work(run)
+                r = run.result or {}
+                files = [f for f in re.findall(r"^diff --git a/.* b/(.+)$", r.get("patch") or "", flags=re.M) if not f.startswith(".pramana/")]
+                if r.get("status") in ("verified", "patched") and files:
+                    branch = f"pramana/issue-{n}"
+                    _git(dest, "checkout", "-q", "-B", branch)
+                    for f in files:
+                        _git(dest, "add", "--", f)
+                    _git(dest, *who, "commit", "-q", "-m", f"Fix #{n}: {it['title']}".strip(), "-m", f"Closes #{n}")
+                    r["branch"], r["commit"], r["closes"] = branch, _git(dest, "rev-parse", "HEAD"), n
+                    run.save("result.json", r)
+                with lock:
+                    it["status"] = r.get("status") or run.status
+                    batch.save(self.runs)
+
+            with ThreadPoolExecutor(max_workers=max(1, min(4, len(batch.items)))) as ex:
+                list(ex.map(one, batch.items))
+            batch.status = "done"
+        except Exception as e:  # noqa: BLE001
+            batch.status = f"error: {type(e).__name__}: {e}"[:300]
+        batch.save(self.runs)
+
     def start(self, prompt: str, repo: str, test: str, want_pr: bool = False) -> Run:
         it = interpret(prompt, repo)
         if not it["prompt"]:
@@ -226,16 +379,20 @@ class Studio:
         if not it["repo"]:
             raise ValueError("Which repository? Paste a GitHub URL (or owner/name) or a local folder path.")
         run = Run(it["prompt"], it["repo"], test, self.home, want_pr)
+        self._register(run, raw_prompt=prompt, raw_repo=repo)
+        threading.Thread(target=self._work, args=(run,), daemon=True).start()
+        return run
+
+    def _register(self, run: Run, raw_prompt: str = "", raw_repo: str = "") -> None:
         run.dir.mkdir(parents=True, exist_ok=True)
         info = self.model_info()
         run.model = {k: info.get(k) for k in ("provider", "model", "base_url", "key_source")}
         run.save("input.json", {"id": run.id, "created": run.created, "prompt": run.prompt, "repo": run.repo_spec,
-                                "raw_prompt": prompt, "raw_repo": repo, "test": test, "want_pr": want_pr,
-                                "title": run.title, "model": run.model})
+                                "raw_prompt": raw_prompt or run.prompt, "raw_repo": raw_repo or run.repo_spec, "test": run.test,
+                                "want_pr": run.want_pr, "title": run.title, "model": run.model,
+                                "batch": getattr(run, "batch_id", ""), "issue": getattr(run, "issue_number", None)})
         with self.lock:
             self.runs[run.id] = run
-        threading.Thread(target=self._work, args=(run,), daemon=True).start()
-        return run
 
     def _work(self, run: Run) -> None:
         try:
@@ -244,14 +401,14 @@ class Studio:
             run.push("stage", {"name": "setup", "message": "getting the repository"})
             workspace = Path(cfg.workspace_dir)
             repo = ensure_repo(run.repo_spec, workspace)
-            if str(repo.resolve()).startswith(str(workspace.resolve())):
+            if str(repo.resolve()).startswith(str(workspace.resolve())) and not getattr(run, "skip_bootstrap", False):
                 from ..repo.bootstrap import bootstrap
                 run.push("stage", {"name": "setup", "message": "installing the project's dependencies"})
                 for note in bootstrap(repo, log=lambda m: run.push("log", {"level": "info", "message": m})):
                     run.push("log", {"level": "info", "message": "env: " + note})
             slug = repo_slug_from_remote(repo)
             issue = parse_issue(run.prompt, default_slug=slug)
-            run.title = issue.title[:120] or run.title
+            run.title = (f"#{run.issue_number} " if getattr(run, "issue_number", None) else "") + (issue.title[:120] or run.title)
             run.push("stage", {"name": "ready", "message": f"repository ready: {repo}", "repo": str(repo), "title": run.title})
             run.status = "running"
             events = Events()
@@ -301,7 +458,8 @@ class Studio:
         kind = body.get("kind", "pr")
         r = run.result or {}
         out = github.create(kind, r.get("repo") or self._repo_path(run), body.get("title") or run.title,
-                            body.get("body") or "", body.get("branch") or "", body.get("files") or [])
+                            body.get("body") or "", body.get("branch") or r.get("branch") or "", body.get("files") or [],
+                            committed=bool(r.get("branch")))
         rec = {"kind": kind, "at": time.strftime("%Y-%m-%d %H:%M:%S"), **out}
         run.github.append(rec)
         run.save("github.json", run.github)
@@ -383,6 +541,12 @@ def make_handler(studio: Studio):
                 return self._json(studio.demos())
             if p == "/api/runs":
                 return self._json([r.summary() for r in sorted(studio.runs.values(), key=lambda r: -r.created)])
+            if p == "/api/batches":
+                return self._json([b.view(studio.runs) for b in sorted(studio.batches.values(), key=lambda b: -b.created)])
+            mb = re.fullmatch(r"/api/batches/([\w-]+)", p)
+            if mb:
+                bt = studio.batches.get(mb.group(1))
+                return self._json(bt.view(studio.runs) if bt else {"error": "no such batch"}, 200 if bt else 404)
             m = re.fullmatch(r"/api/runs/([\w-]+)(/events|/patch|/report|/github)?", p)
             if m:
                 run = studio.runs.get(m.group(1))
@@ -411,8 +575,18 @@ def make_handler(studio: Studio):
             b = self._body()
             try:
                 if p == "/api/runs":
+                    if not b.get("as_text"):
+                        pick = studio.issues_for(b.get("prompt", ""), b.get("repo", ""))
+                        if pick and pick.get("select_issues"):
+                            return self._json(pick)
+                        if pick and pick.get("single"):
+                            run = studio.start(pick["single"], pick["repo"], b.get("test", ""), bool(b.get("want_pr")))
+                            return self._json({"id": run.id})
                     run = studio.start(b.get("prompt", ""), b.get("repo", ""), b.get("test", ""), bool(b.get("want_pr")))
                     return self._json({"id": run.id})
+                if p == "/api/batch":
+                    batch = studio.start_batch(b.get("repo", ""), [int(n) for n in b.get("numbers") or []], bool(b.get("want_pr")))
+                    return self._json({"id": batch.id})
                 m = re.fullmatch(r"/api/runs/([\w-]+)/(github|flags)", p)
                 if m and m.group(1) in studio.runs:
                     run = studio.runs[m.group(1)]

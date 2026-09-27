@@ -168,3 +168,15 @@ def test_missing_reasoning_content_400_turns_passback_on(monkeypatch):
         srv.close()
     assert resp.text == "done"
     assert all("reasoning_content" in m for m in srv.requests[1]["body"]["messages"] if m["role"] == "assistant")
+
+
+def test_throttle_halves_on_429_and_grows_on_success():
+    from pramana.llm.openai_compat import _Throttle
+    t = _Throttle(start=4, cap=6)
+    t.acquire()
+    t.release(429, pause=0.0)
+    assert t.limit == 2                     # multiplicative decrease
+    for _ in range(10):
+        t.acquire()
+        t.release(200)
+    assert t.limit == 3                     # additive increase after 10 clean replies

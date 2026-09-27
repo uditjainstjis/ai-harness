@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -67,6 +68,49 @@ def _debug_dump(payload: Dict[str, Any]) -> None:
         pass
 
 
+class _Throttle:
+    """Process-wide, per-endpoint concurrency that adapts to rate limits (AIMD): at most `limit` requests in
+    flight, starting at 2; one more after every 10 clean replies (up to 8); halved on a 429, and everyone
+    pauses together for the back-off instead of hammering the endpoint in parallel."""
+
+    def __init__(self, start: int = 2, cap: int = 8) -> None:
+        self.limit, self.cap, self.in_flight, self.ok, self.cool_until = start, cap, 0, 0, 0.0
+        self.cond = threading.Condition()
+
+    def acquire(self) -> None:
+        with self.cond:
+            while True:
+                now = time.time()
+                if now < self.cool_until:
+                    self.cond.wait(timeout=self.cool_until - now)
+                elif self.in_flight >= self.limit:
+                    self.cond.wait(timeout=1.0)
+                else:
+                    self.in_flight += 1
+                    return
+
+    def release(self, status: int, pause: float = 0.0) -> None:
+        with self.cond:
+            self.in_flight = max(0, self.in_flight - 1)
+            if status == 429:
+                self.limit, self.ok = max(1, self.limit // 2), 0
+                self.cool_until = max(self.cool_until, time.time() + pause)
+            elif 0 < status < 400:
+                self.ok += 1
+                if self.ok >= 10 and self.limit < self.cap:
+                    self.limit, self.ok = self.limit + 1, 0
+            self.cond.notify_all()
+
+
+_THROTTLES: Dict[str, _Throttle] = {}
+_THROTTLES_LOCK = threading.Lock()
+
+
+def throttle_for(url: str) -> _Throttle:
+    with _THROTTLES_LOCK:
+        return _THROTTLES.setdefault(url.split("?")[0], _Throttle())
+
+
 class OpenAICompatLLM:
     def __init__(
         self,
@@ -98,6 +142,7 @@ class OpenAICompatLLM:
         self.reasoning_field = ""
         self.passback_all = False
         self.text_mode_stops: List[str] = []  # set by ChatModel when it drives this backend in text mode
+        self.on_wait = None  # callback(message): tells the UI when the endpoint makes us wait
         headers = {"Content-Type": "application/json"}
         self.api_version = os.environ.get("AI_API_VERSION", "").strip()
         self.is_azure = provider == "azure" or ".azure.com" in self.base_url or "azure-api.net" in self.base_url
@@ -230,12 +275,27 @@ class OpenAICompatLLM:
             _debug_dump(payload)
             t0 = time.time()
             try:
-                r = self._client.post(url, json=payload)
+                thr = throttle_for(url)
+                thr.acquire()
+                status = 0
+                try:
+                    r = self._client.post(url, json=payload)
+                    status = r.status_code
+                finally:
+                    ra = 0.0
+                    if status == 429:
+                        try:
+                            ra = float(r.headers.get("retry-after") or 0)
+                        except (ValueError, UnboundLocalError):
+                            ra = 0.0
+                    thr.release(status, pause=max(ra, 2.0 ** min(attempt + 1, 4)) if status == 429 else 0.0)
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 attempt += 1
                 if attempt > 6:
                     raise LLMError(f"network error talking to {self.base_url}: {e}") from e
-                time.sleep(min(60, 2 ** attempt + random.random()))
+                wait = min(20, 2 ** attempt + random.random())
+                self._tell(f"model endpoint did not answer ({type(e).__name__}); retrying in {wait:.0f}s")
+                time.sleep(wait)
                 continue
             latency = time.time() - t0
             if r.status_code == 200:
@@ -278,14 +338,22 @@ class OpenAICompatLLM:
             limit = 8 if r.status_code == 429 else 4
             if attempt > limit:
                 raise LLMError(f"HTTP {r.status_code} after retries: {body[:500]}")
-            wait = min(60.0, (2 ** min(attempt, 6)) + random.random()) if r.status_code == 429 else 1.5 * attempt + random.random()
+            wait = min(20.0, (2 ** min(attempt, 5)) + random.random()) if r.status_code == 429 else 1.5 * attempt + random.random()
             ra = r.headers.get("retry-after")
             if ra:
                 try:
-                    wait = min(120.0, max(wait, float(ra)))
+                    wait = min(60.0, max(wait, float(ra)))
                 except ValueError:
                     pass
+            self._tell(f"model endpoint busy (HTTP {r.status_code}{', rate limit' if r.status_code == 429 else ''}); retrying in {wait:.0f}s")
             time.sleep(wait)
+
+    def _tell(self, msg: str) -> None:
+        if self.on_wait:
+            try:
+                self.on_wait(msg)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _parse(self, data: Dict[str, Any], latency: float) -> LLMResponse:
         choice = data["choices"][0]

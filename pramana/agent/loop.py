@@ -72,6 +72,13 @@ def _brief(call: ToolCall) -> str:
     return json.dumps(a)[:120]
 
 
+def _small_patch(patch: str, max_lines: int = 20) -> bool:
+    """One source file and at most max_lines changed lines (scratch files do not count)."""
+    files = [f for f in re.findall(r"^diff --git a/.* b/(.+)$", patch, flags=re.M) if not f.startswith(".pramana/")]
+    changed = sum(1 for l in patch.splitlines() if l[:1] in "+-" and not l.startswith(("+++", "---")))
+    return len(files) <= 1 and changed <= max_lines
+
+
 class Attempt:
     def __init__(self, number: int, model: ChatModel, toolbox: Toolbox, gate: Gate, events: Events,
                  system_prompt: str, initial_message: str, max_steps: int, budget_left_fn,
@@ -104,6 +111,7 @@ class Attempt:
         self._reviews = 0
         self._last_prompt_tokens = 0
         self._step = 0
+        self._last_text = ""
         toolbox.on_submit = self._on_submit
 
     # ------------------------------------------------------------------ submit gate
@@ -115,7 +123,8 @@ class Attempt:
         self.result.summary = payload.get("summary", "")
         self.events.emit("verify", attempt=self.n, accepted=v.accepted, strength=v.strength, round=v.round,
                          checks=[{"command": c.command, "verdict": c.verdict, "origin": c.origin} for c in v.checks])
-        if v.accepted and self.independent is not None and not self._independent_done and not final and v.patch.strip():
+        if (v.accepted and self.independent is not None and not self._independent_done and not final and v.patch.strip()
+                and v.strength != "strong"):   # strong proof already exists: a second test would only cost time
             self._independent_done = True
             self.events.emit("phase", name="review", attempt=self.n)
             ind = self.independent()
@@ -136,7 +145,8 @@ class Attempt:
                         "summary. Then call submit again.",
                         is_error=True,
                     )
-        if v.accepted and self.reviewer is not None and self._reviews < 2 and not final and v.patch.strip():
+        if (v.accepted and self.reviewer is not None and self._reviews < 2 and not final and v.patch.strip()
+                and not (v.strength == "strong" and _small_patch(v.patch))):
             self._reviews += 1
             self.events.emit("phase", name="review", attempt=self.n)
             review = self.reviewer(v)
@@ -268,8 +278,8 @@ class Attempt:
     def _checkpoint(self, step: int) -> Optional[str]:
         """Costs no model tokens: once the agent has edited source and run something successfully, check
         whether its change ALREADY has proof, and if so tell it to stop exploring and submit."""
-        if (self._edits == 0 or self._accepted or self._checkpoints >= 2 or step < 8
-                or step - self._last_checkpoint_step < 6 or step > self.max_steps - 3):
+        if (self._edits == 0 or self._accepted or self._checkpoints >= 4 or step < 3
+                or step - self._last_checkpoint_step < 2 or step > self.max_steps - 3):
             return None
         cmds = self._guess_verification_cmds()
         if not cmds:
@@ -282,7 +292,14 @@ class Attempt:
                          checks=[{"command": c.command, "verdict": c.verdict, "origin": c.origin} for c in v.checks])
         if v.strength != "strong":
             return None
-        return (
+        # proven already: submit on the agent's behalf instead of waiting for it to stop exploring
+        res = self._on_submit({"summary": self._last_text or "(submitted by the harness: the change already carries proof)",
+                               "verification_commands": cmds})
+        if self._accepted:
+            self.events.emit("log", level="info", message=f"harness checkpoint at step {step}: change proven, submitted automatically")
+            return None
+        return res.output  # e.g. the reviewer asked for changes: the agent continues with that feedback
+        return (  # (kept for reference: the old nudge)
             "HARNESS CHECKPOINT (no action needed if you disagree). Your current change already carries proof: the "
             "harness ran your commands on the original code and on your patched code.\n\n" + v.feedback +
             "\n\nIf the issue is fully addressed, call `submit` NOW with these verification_commands instead of "
@@ -346,6 +363,8 @@ class Attempt:
                 resp.tool_calls = canon
             if resp.text or resp.tool_calls:
                 messages.append(resp.as_message())
+            if (resp.text or "").strip():
+                self._last_text = resp.text.strip()[:1500]
             if unknown and not resp.tool_calls:
                 # nothing usable in this turn: one clear note instead of an empty assistant turn + two nudges
                 messages.append({"role": "user", "_nudge": True, "content": (
@@ -397,6 +416,9 @@ class Attempt:
             if ignored_note:  # after the tool results: tool messages must directly follow their call
                 messages.append({"role": "user", "content": ignored_note, "_nudge": True})
             note = self._checkpoint(step)
+            if self._accepted:
+                stop = "auto_submitted"
+                break
             if note:
                 messages.append({"role": "user", "content": note, "_nudge": True})
             for note in self._guards():

@@ -52,9 +52,37 @@
   <section class="recent" id="recent-wrap" hidden><h3>Recent runs</h3><div id="recent"></div></section>
 </main>
 
-<main id="run" class="view" hidden>
+<main id="pick" class="view" hidden>
+  <div class="hero">
+    <button class="link" onclick="go('home')">← Back</button>
+    <h2 class="pick-h">Which issues should I fix in <span id="pick-repo"></span>?</h2>
+    <p class="lede">I found these open issues on GitHub. Each one gets its own run from the original code, its own proof, and — if you want — its own pull request.</p>
+    <div class="card pick-card">
+      <div class="pick-tools"><button class="link" onclick="pickAll(true)">Select all</button> · <button class="link" onclick="pickAll(false)">None</button></div>
+      <div id="pick-list"></div>
+    </div>
+    <label class="pr-check"><input type="checkbox" id="pick-pr"> Ask me to open a pull request for each verified fix, one by one</label>
+    <div class="pick-foot">
+      <button class="link" onclick="useAsText()">No — just use my text as the task</button>
+      <button class="primary" id="pick-go" onclick="startBatch()">Fix selected issues</button>
+    </div>
+    <div id="pick-error" class="form-error"></div>
+  </div>
+</main>
+
+<main id="batch" class="view" hidden>
   <div class="run-head">
     <button class="link" onclick="go('home')">← New task</button>
+    <div class="run-title"><h2 id="batch-title">…</h2><div class="run-meta"><span class="chip" id="batch-progress"></span><span class="chip" id="batch-model"></span></div></div>
+    <div id="batch-status" class="status-pill running"><span class="spin"></span>Working</div>
+  </div>
+  <div class="card batch-card"><table class="batch-table"><thead><tr><th>Issue</th><th>Status</th><th class="num">Time</th><th class="num">Tokens</th><th>Pull request</th></tr></thead><tbody id="batch-rows"></tbody></table></div>
+  <p class="note small muted">Each issue starts from the original code and is proven on its own; a proven fix is committed to its own branch <code>pramana/issue-N</code>, so every pull request contains exactly one fix.</p>
+</main>
+
+<main id="run" class="view" hidden>
+  <div class="run-head">
+    <button class="link" id="run-back" onclick="runBack()">← New task</button>
     <div class="run-title"><h2 id="run-title">…</h2><div class="run-meta"><span class="chip" id="run-repo"></span><span class="chip" id="run-model"></span></div></div>
     <div id="run-status" class="status-pill running"><span class="spin"></span>Starting</div>
   </div>

@@ -20,9 +20,11 @@ function toggleTheme() {
 try { const t = localStorage.getItem("pramana-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 
 /* ---------------- views ---------------- */
+let pickState = null, batchTimer = null, lastBatch = null;
 function go(view, id) {
-  $("#home").hidden = view !== "home";
-  $("#run").hidden = view !== "run";
+  ["home", "run", "pick", "batch"].forEach((v) => ($("#" + v).hidden = v !== view));
+  if (batchTimer && view !== "batch") { clearInterval(batchTimer); batchTimer = null; }
+  if (view === "batch") { history.replaceState(null, "", "#batch=" + id); openBatch(id); return; }
   if (view === "home") { history.replaceState(null, "", "/"); stopStream(); loadRecent(); $("#prompt").focus(); }
   if (view === "run") { history.replaceState(null, "", "#run=" + id); openRun(id); }
 }
@@ -74,6 +76,7 @@ async function testModel() {
   $("#model-test").innerHTML = r.ok ? `<span style="color:var(--ok)">✓ Connected in ${r.seconds}s</span>` : `<span style="color:var(--bad)">✗ ${esc(r.error)}</span>`;
 }
 $("#drawer").addEventListener("click", (e) => { if (e.target.id === "drawer") closeSettings(); });
+$("#gh-dlg").addEventListener("close", () => { if (walkQueue && walkQueue.length) setTimeout(nextWalk, 300); });
 
 /* ---------------- model picker (composer) ---------------- */
 async function loadModelPicker() {
@@ -130,6 +133,7 @@ async function startRun() {
   btn.disabled = true;
   try {
     const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value, want_pr: $("#want-pr").checked });
+    if (r.select_issues) { showPicker(r); return; }
     go("run", r.id);
   } catch (e) {
     $("#form-error").textContent = e.message;
@@ -207,6 +211,8 @@ async function openRun(id) {
   ["#st-calls", "#st-tokens"].forEach((s) => ($(s).textContent = "0")); $("#st-steps").textContent = "–";
   const info = await api("/api/runs/" + id);
   cur.replay = info.status === "done" || info.status === "error" || info.status === "interrupted";
+  cur.batchId = (info.batch_id || lastBatch) && info.title.startsWith("#") ? (info.batch_id || lastBatch) : null;
+  $("#run-back").textContent = cur.batchId ? "← Back to the issues" : "← New task";
   $("#run-title").textContent = info.title;
   $("#run-repo").textContent = info.repo;
   $("#run-want-pr").checked = !!info.want_pr;
@@ -234,6 +240,9 @@ function handle(e) {
       if (e.status === "start") { setStatus("running", "Working"); line("▶", `Run started · model ${esc(e.model)} via the ${esc(PRETTY[e.provider] || e.provider)} API`, "note", t); }
       break;
     case "phase": stepTo(e.name); break;
+    case "triage":
+      line("⚖", `Triage: looks <b>${esc(e.size)}</b> (${esc((e.reasons || []).join(", "))}) → ${esc(e.plan)}`, "note big", t);
+      break;
     case "intake":
       panel("ev-project", `<b>${esc(e.language)}</b> · ${e.files} files<br><span class="muted">tests:</span> <code>${esc(e.test_command || "not found")}</code>` +
         ((e.notes || []).length ? `<ul>${e.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""));
@@ -346,6 +355,70 @@ function renderDiff(patch) {
     return `<div class="dfile"><div class="dfile-name">${esc(name)}</div><div class="dlines">${body}</div></div>`;
   }).join("");
 }
+/* ---------------- issue picker + batch ---------------- */
+function showPicker(r) {
+  pickState = r;
+  ["home", "run", "batch"].forEach((v) => ($("#" + v).hidden = true)); $("#pick").hidden = false;
+  $("#pick-repo").textContent = r.repo;
+  $("#pick-pr").checked = $("#want-pr").checked;
+  const pre = new Set(r.preselect || []);
+  $("#pick-list").innerHTML = r.issues.length ? r.issues.map((i) => `<label class="pick-row"><input type="checkbox" value="${i.number}" ${pre.has(i.number) ? "checked" : ""}>
+      <span class="num">#${i.number}</span><span><span class="ttl">${esc(i.title)}</span>${(i.labels || []).map((l) => `<span class="lbl ${esc(l)}">${esc(l)}</span>`).join("")}
+      <div class="muted small">${esc((i.body || "").split("\n")[0].slice(0, 160))}</div></span></label>`).join("")
+    : `<p class="muted">No open issues on this repository — use your text as the task instead.</p>`;
+}
+function pickAll(on) { document.querySelectorAll("#pick-list input").forEach((c) => (c.checked = on)); }
+async function useAsText() {
+  try {
+    const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value, want_pr: $("#want-pr").checked, as_text: true });
+    go("run", r.id);
+  } catch (e) { $("#pick-error").textContent = e.message; }
+}
+async function startBatch() {
+  const nums = [...document.querySelectorAll("#pick-list input:checked")].map((c) => +c.value).sort((a, b) => a - b);
+  try { const r = await api("/api/batch", { repo: pickState.repo, numbers: nums, want_pr: $("#pick-pr").checked }); go("batch", r.id); }
+  catch (e) { $("#pick-error").textContent = e.message; }
+}
+const DONE = new Set(["verified", "patched", "no_patch", "error", "interrupted"]);
+let walkQueue = null;
+async function openBatch(id) {
+  lastBatch = id;
+  const tick = async () => {
+    let b;
+    try { b = await api("/api/batches/" + id); } catch (e) { return; }
+    $("#batch-title").textContent = `Fixing ${b.items.length} issue${b.items.length > 1 ? "s" : ""} in ${b.repo}`;
+    const done = b.items.filter((x) => DONE.has(x.status)).length;
+    $("#batch-progress").textContent = `${done} / ${b.items.length} done · ${b.items.filter((x) => x.status === "verified").length} verified`;
+    $("#batch-model").textContent = modelInfo ? `${PRETTY[modelInfo.provider] || modelInfo.provider} API · ${modelInfo.model}` : "";
+    const finished = b.status === "done" || String(b.status).startsWith("error");
+    const el = $("#batch-status");
+    el.className = "status-pill " + (finished ? (String(b.status).startsWith("error") ? "failed" : "verified") : "running");
+    el.innerHTML = finished ? (String(b.status).startsWith("error") ? esc(b.status) : "All done") : '<span class="spin"></span>Working';
+    $("#batch-rows").innerHTML = b.items.map((x) => {
+      const p = pillOf(DONE.has(x.status) ? x.status : "running");
+      const lbl = x.status === "queued" ? "Queued" : DONE.has(x.status) ? p.label : "Working…";
+      const pr = (x.github || []).find((g) => g.kind === "pr" && g.url);
+      const prCell = pr ? `<a href="${esc(pr.url)}" target="_blank" onclick="event.stopPropagation()">open PR ↗</a>`
+        : (x.branch ? `<button class="btn" onclick="event.stopPropagation();openGithub('pr',false,'${x.run_id}')">Create PR</button>` : '<span class="muted">–</span>');
+      return `<tr class="${x.run_id ? "clickable" : ""}" onclick="${x.run_id ? `go('run','${x.run_id}')` : ""}"><td><b>#${x.number}</b> ${esc(x.title)}</td>
+        <td><span class="status-pill ${x.status === "queued" ? "" : p.cls}">${esc(lbl)}</span></td><td class="num">${x.elapsed_s ? fmtTime(x.elapsed_s) : ""}</td>
+        <td class="num">${x.tokens ? fmtTok(x.tokens) : ""}</td><td>${prCell}</td></tr>`;
+    }).join("");
+    if (finished) {
+      clearInterval(batchTimer); batchTimer = null;
+      if (b.want_pr && walkQueue === null) {          // one by one: offer each proven fix's pull request in turn
+        walkQueue = b.items.filter((x) => x.branch && !(x.github || []).some((g) => g.kind === "pr" && g.url)).map((x) => x.run_id);
+        nextWalk();
+      }
+    }
+  };
+  walkQueue = null;
+  await tick();
+  batchTimer = setInterval(tick, 2500);
+}
+function nextWalk() { if (walkQueue && walkQueue.length) openGithub("pr", true, walkQueue.shift()); }
+function runBack() { if (cur && cur.batchId) go("batch", cur.batchId); else go("home"); }
+
 /* ---------------- GitHub: pull request / issue ---------------- */
 let ghKind = "pr", ghPreview = null;
 function renderGhLinks(list) {
@@ -354,15 +427,17 @@ function renderGhLinks(list) {
     : `<span style="color:var(--bad)">✗ ${g.kind === "pr" ? "Pull request" : "Issue"} failed: ${esc(String(g.error || "").slice(0, 200))}</span>`).join("<br>");
 }
 async function toggleWantPr(on) { cur.wantPr = on; try { await api(`/api/runs/${cur.id}/flags`, { want_pr: on }); } catch (e) {} }
-async function openGithub(kind, askedAtEnd) {
+let ghRun = null;
+async function openGithub(kind, askedAtEnd, runId) {
   ghKind = kind;
+  ghRun = runId || cur.id;
   const dlg = $("#gh-dlg");
-  $("#gh-title-h").textContent = (askedAtEnd ? "The fix is ready — " : "") + (kind === "pr" ? "Create pull request" : "Create issue");
+  $("#gh-title-h").textContent = (askedAtEnd ? "Fix ready — " : "") + (kind === "pr" ? "Create pull request" : "Create issue");
   $("#gh-where").innerHTML = "Checking GitHub…"; $("#gh-title").value = ""; $("#gh-desc").value = ""; $("#gh-status").textContent = "";
   $("#gh-go").disabled = true;
   dlg.showModal();
   try {
-    ghPreview = await api(`/api/runs/${cur.id}/github?kind=${kind}`);
+    ghPreview = await api(`/api/runs/${ghRun}/github?kind=${kind}`);
   } catch (e) { ghPreview = { ok: false, error: e.message }; }
   if (!ghPreview.ok) { $("#gh-where").innerHTML = `<span style="color:var(--bad)">${esc(ghPreview.error || "Not available.")}</span>`; return; }
   const p = ghPreview;
@@ -377,7 +452,7 @@ async function submitGithub() {
   const btn = $("#gh-go"); btn.disabled = true;
   $("#gh-status").textContent = ghKind === "pr" ? "Creating the branch, pushing, opening the pull request…" : "Creating the issue…";
   try {
-    const r = await api(`/api/runs/${cur.id}/github`, { kind: ghKind, title: $("#gh-title").value, body: $("#gh-desc").value,
+    const r = await api(`/api/runs/${ghRun}/github`, { kind: ghKind, title: $("#gh-title").value, body: $("#gh-desc").value,
       branch: ghPreview && ghPreview.branch, files: ghPreview && ghPreview.files });
     if (r.ok) { $("#gh-status").innerHTML = `✓ Created: <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a>`; }
     else { $("#gh-status").innerHTML = `<span style="color:var(--bad)">✗ ${esc(String(r.error || "failed").slice(0, 300))}</span>`; btn.disabled = false; }
@@ -388,5 +463,5 @@ function copyPath() { if (cur && cur.repoPath) navigator.clipboard.writeText(cur
 
 /* ---------------- boot ---------------- */
 loadModel().then(loadModelPicker); loadDemos(); understood();
-const m = location.hash.match(/run=([\w-]+)/);
-if (m) go("run", m[1]); else go("home");
+const m = location.hash.match(/run=([\w-]+)/), mb = location.hash.match(/batch=([\w-]+)/);
+if (m) go("run", m[1]); else if (mb) go("batch", mb[1]); else go("home");

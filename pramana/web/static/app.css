@@ -207,3 +207,23 @@ button, .btn { font: inherit; cursor: pointer; }
 .gh-where code { font-size: 12px; }
 .gh-foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 14px; }
 .gh-foot #gh-status { margin-right: auto; }
+
+.pick-h { font-size: 26px; letter-spacing: -.02em; margin: 10px 0 6px; }
+.pick-card { padding: 8px 14px; max-height: 52vh; overflow: auto; }
+.pick-tools { font-size: 13px; padding: 6px 0 8px; border-bottom: 1px solid var(--line); }
+.pick-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 2px; border-bottom: 1px dashed var(--line); cursor: pointer; }
+.pick-row input { margin-top: 4px; accent-color: var(--accent2); width: 15px; height: 15px; }
+.pick-row .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; }
+.pick-row .ttl { font-weight: 600; }
+.lbl { display: inline-block; font-size: 11px; border-radius: 999px; padding: 1px 8px; margin-left: 6px; background: var(--bg2); color: var(--muted); border: 1px solid var(--line); }
+.lbl.bug { color: var(--bad); background: var(--bad-bg); border-color: transparent; }
+.lbl.security { color: #fff; background: var(--bad); border-color: transparent; }
+.lbl.enhancement { color: var(--info); background: var(--info-bg); border-color: transparent; }
+.pick-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+.batch-card { padding: 6px 12px; margin-top: 16px; }
+.batch-table td, .batch-table th { padding: 10px 8px; }
+.batch-table tr.clickable { cursor: pointer; }
+.batch-table tr.clickable:hover td { background: var(--bg2); }
+.primary { white-space: nowrap; }
+.understood { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.go-group { flex: none; }

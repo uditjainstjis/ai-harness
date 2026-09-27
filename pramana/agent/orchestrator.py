@@ -51,6 +51,35 @@ class RunResult:
     summary: str = ""
 
 
+FEATURE_WORDS = re.compile(r"\b(feature request|add support|implement|new option|new endpoint|allow users? to|would be nice|enhancement)\b", re.I)
+
+
+def triage(issue: Issue, issue_text: str, src, snippet_out: str):
+    """Zero-token guess at the size of the task. The proof gate, not this guess, decides when to stop."""
+    reasons = []
+    labels = {l.lower() for l in (issue.labels or [])}
+    score = 0
+    if labels & {"enhancement", "feature", "feature request"} or FEATURE_WORDS.search(issue_text):
+        score += 2
+        reasons.append("asks for new behaviour")
+    if "security" in labels or re.search(r"\b(xss|injection|csrf|vulnerab)", issue_text, re.I):
+        score += 1
+        reasons.append("security fix")
+    if len(issue_text) > 6000:
+        score += 2
+        reasons.append("long report")
+    strong = [c for c in src[:8] if getattr(c, "score", 0) >= (src[0].score * 0.6 if src and getattr(src[0], "score", 0) else 1)]
+    if len(strong) >= 4:
+        score += 1
+        reasons.append(f"{len(strong)} files look involved")
+    if snippet_out and re.search(r"Traceback|Error", snippet_out):
+        score -= 1
+        reasons.append("the issue's own code reproduces the error")
+    if not reasons:
+        reasons.append("a focused bug report")
+    return ("small" if score <= 1 else "medium" if score <= 3 else "large"), reasons
+
+
 def slugify(text: str, n: int = 40) -> str:
     s = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
     return s[:n] or "issue"
@@ -150,6 +179,9 @@ class Orchestrator:
         try:
             if self.model is None:
                 self.model = build_model(cfg)
+            backend = getattr(self.model, "backend", None)
+            if backend is not None and hasattr(backend, "on_wait"):
+                backend.on_wait = lambda msg: ev.emit("log", level="warn", message=msg)
             result.model, result.provider = self.model.name, self.model.provider
             ev.emit("run", status="start", run_dir=str(run_dir), model=self.model.name, provider=self.model.provider,
                     issue=issue.title, repo=str(repo_path))
@@ -193,16 +225,47 @@ class Orchestrator:
             result.hints = hints
             ev.emit("localized", hints=hints, seconds=round(time.time() - t0, 2), top=[c.path for c in src[:5]])
 
-            criteria = self._predict_criteria(issue_text) if cfg.agent.criteria else ""
+            budget = cfg.agent.token_budget
+            lessons: Optional[str] = None
+            # ---------------------------------------------------------- triage (free): how big does this look?
+            size, reasons = triage(issue, issue_text, src, snippet_out)
+            try_fast = cfg.agent.fast_path and size != "large"
+            ev.emit("triage", size=size, reasons=reasons,
+                    plan="one-shot fix first, full agent only if it can't be proven" if try_fast else "full agent from the start")
+            # ---------------------------------------------------------- fast path: one call, then the same proof
+            if try_fast:
+                from .fastpath import FastPath
+
+                toolbox = Toolbox(root, scratch, index, command_timeout=cfg.agent.command_timeout_s, git=git)
+                gate = Gate(root, git, info.files, info.test_file_command, info.test_framework, toolbox.env,
+                            timeout_s=cfg.agent.verify_timeout_s, acceptance_cmd=acceptance_cmd,
+                            max_rounds=cfg.agent.max_gate_rejections)
+                fast = FastPath(self.model, root, info, git, toolbox, gate, ev,
+                                reviewer=None).run(issue_text, snippet_block, [c.path for c in src[:6]], [c.path for c in tests[:3]])
+                if fast.ok:
+                    from .loop import AttemptResult
+
+                    ar = AttemptResult(number=1, steps=1, stop_reason="fast_path", verification=fast.verification,
+                                       patch=git.patch(), summary=fast.diagnosis or "fixed in one call", elapsed_s=fast.elapsed_s)
+                    result.attempts.append(ar)
+                elif fast.stage != "no-reply":
+                    lessons = fast.lessons()
+                    if fast.stage == "review":   # the fix is kept; the agent completes it
+                        pass
+                    else:
+                        git.reset_to_base()
+            criteria = ""
+            if not (result.attempts and result.attempts[0].stop_reason == "fast_path"):
+                criteria = self._predict_criteria(issue_text) if cfg.agent.criteria else ""
             self._criteria = criteria
             system = prompts.SYSTEM_PROMPT.format(root=root, repo_summary=info.summary().replace("\n", "\n- "))
-            lessons: Optional[str] = None
-            budget = cfg.agent.token_budget
 
             def budget_left() -> int:
                 return budget - self.model.usage.total_tokens
 
             for n in range(1, max(1, cfg.agent.max_attempts) + 1):
+                if result.attempts and result.attempts[0].stop_reason == "fast_path":
+                    break                      # proven in one call: no agent loop needed
                 if n > 1:
                     if budget_left() < budget * 0.25:
                         ev.emit("log", level="info", message="skipping another attempt: token budget mostly spent")
