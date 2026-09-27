@@ -115,7 +115,7 @@ def solve_against(server, tmp_path, monkeypatch, **agent):
     monkeypatch.setenv("AI_BASE_URL", server.url)
     monkeypatch.setenv("AI_MODEL", "hostile-1")
     monkeypatch.setenv("AI_PROVIDER", "openai")
-    cfg = load_config({"agent": {"max_attempts": 1, "max_steps": 12, **agent}})
+    cfg = load_config({"agent": {"max_attempts": 1, "max_steps": 12, "fast_path": False, **agent}})
     cfg.runs_dir = str(tmp_path / "runs")
     repo = make_repo(tmp_path)
     issue = issue_from_text("mean([]) raises ZeroDivisionError\n\nIt should return 0.0 for an empty list.")
@@ -151,7 +151,7 @@ def test_tiny_context_window_shrinks_the_prompt_instead_of_crashing(tmp_path, mo
     monkeypatch.setenv("AI_BASE_URL", srv.url)
     monkeypatch.setenv("AI_MODEL", "hostile-1")
     monkeypatch.setenv("AI_PROVIDER", "openai")
-    cfg = load_config({"agent": {"max_attempts": 1, "max_steps": 12}})
+    cfg = load_config({"agent": {"max_attempts": 1, "max_steps": 12, "fast_path": False}})
     cfg.runs_dir = str(tmp_path / "runs")
     repo = make_repo(tmp_path)
     logs = []
