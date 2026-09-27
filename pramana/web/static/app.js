@@ -445,7 +445,7 @@ function runBack() { if (cur && cur.batchId) go("batch", cur.batchId); else go("
 let ghKind = "pr", ghPreview = null;
 function renderGhLinks(list) {
   cur.gh = list;
-  $("#gh-links").innerHTML = list.map((g) => g.url ? `✓ ${g.kind === "pr" ? "Pull request" : "Issue"} created: <a href="${esc(g.url)}" target="_blank">${esc(g.url)}</a>`
+  $("#gh-links").innerHTML = list.map((g) => g.url ? `✓ ${g.kind === "pr" ? "Pull request" : "Issue"} ${g.updated ? "updated" : "created"}: <a href="${esc(g.url)}" target="_blank">${esc(g.url)}</a>`
     : `<span style="color:var(--bad)">✗ ${g.kind === "pr" ? "Pull request" : "Issue"} failed: ${esc(String(g.error || "").slice(0, 200))}</span>`).join("<br>");
 }
 async function toggleWantPr(on) { cur.wantPr = on; try { await api(`/api/runs/${cur.id}/flags`, { want_pr: on }); } catch (e) {} }

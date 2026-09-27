@@ -177,7 +177,12 @@ def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", f
             return {"ok": False, "error": "push failed: " + out[-600:]}
         code, out = _run(["gh", "pr", "create", "--repo", slug, "--base", base, "--head", f"{owner}:{branch}",
                           "--title", title, "--body-file", body_file], timeout=120)
-        url = next((l for l in out.splitlines() if l.startswith("https://github.com/")), "")
+        url = next((l.strip() for l in out.splitlines() if l.strip().startswith("https://github.com/")), "")
+        if code != 0 and "already exists" in out:
+            # the branch was just force-pushed, so the open pull request now carries this fix
+            existing = re.search(r"https://github\.com/\S+/pull/\d+", out)
+            return {"ok": True, "url": existing.group(0) if existing else url, "updated": True,
+                    "note": "updated the existing pull request with this fix"}
         return {"ok": code == 0 and bool(url), "url": url, "error": "" if code == 0 else out[-600:]}
     finally:
         Path(body_file).unlink(missing_ok=True)
