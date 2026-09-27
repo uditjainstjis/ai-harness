@@ -133,3 +133,44 @@ def test_a_reply_cut_off_while_reasoning_does_not_use_up_the_second_round(tmp_pa
     res = Orchestrator(cfg, Events(), model=model).solve(repo, issue_from_text("mean([]) raises ZeroDivisionError\n\nIt should return 0.0."))
     assert res.status == "verified", res.error
     assert res.usage.calls == 3                      # reasoning, finish-now answer, corrected answer
+
+
+FUNC = ('def mean(xs):\n    """Average of xs."""\n    # sum then divide\n    total = 0\n    for x in xs:\n'
+        '        total += x\n    count = len(xs)\n    return total / count\n')
+
+
+def test_near_miss_edit_keeps_the_real_context_lines():
+    from pramana.agent.fastpath import near_miss_apply
+    search = ('    """Average of xs."""\n    # add them up then divide\n    total = 0\n    for x in xs:\n'
+              '        total += x\n    count = len(xs)\n    return total / count')
+    replace = search.replace("    return total / count", "    if not count:\n        return 0.0\n    return total / count")
+    out = near_miss_apply(FUNC, search, replace)
+    assert out is not None
+    text, line = out
+    assert "# sum then divide" in text and "add them up" not in text      # the real comment survives
+    assert "    if not count:\n        return 0.0\n    return total / count\n" in text and line == 2
+
+
+def test_near_miss_refuses_when_the_changed_line_itself_is_misremembered():
+    from pramana.agent.fastpath import near_miss_apply
+    search = ('    """Average of xs."""\n    # sum then divide\n    total = 0\n    for x in xs:\n'
+              '        total += x\n    count = len(xs)\n    return total / len(xs)')
+    replace = search.replace("    return total / len(xs)", "    return total / count if count else 0.0")
+    assert near_miss_apply(FUNC, search, replace) is None
+
+
+def test_near_miss_refuses_an_ambiguous_region():
+    from pramana.agent.fastpath import near_miss_apply
+    search = FUNC.replace("# sum then divide", "# add up").rstrip("\n")
+    assert near_miss_apply(FUNC + "\n\n" + FUNC, search, search.replace("return total / count", "return 0")) is None
+
+
+def test_an_edit_repeated_verbatim_in_the_reply_is_applied_once(tmp_path):
+    """Measured on real repos: the model repeated an edit; the copy could not find its (already replaced) text."""
+    block = ("mathx/stats.py\n<<<<<<< SEARCH\n    return sum(xs) / len(xs)\n=======\n"
+             "    return (sum(xs) / len(xs)) if xs else 0.0\n>>>>>>> REPLACE\n\n")
+    first = REPLY.index("mathx/stats.py")
+    reply = REPLY[:first] + block + block + REPLY[REPLY.index(".pramana/test_issue.py"):]
+    repo, res = _solve(tmp_path, reply)
+    assert res.status == "verified", res.error
+    assert res.usage.calls == 1

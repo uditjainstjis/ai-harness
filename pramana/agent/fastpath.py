@@ -68,6 +68,62 @@ FINISH_NOW = ("You ran out of space while thinking. Stop analysing now. Reply wi
 BLOCK_RE = re.compile(r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> REPLACE", re.S)
 
 
+def near_miss_apply(text: str, search: str, replace: str, min_ratio: float = 0.9) -> Optional[Tuple[str, int]]:
+    """Apply a SEARCH/REPLACE whose SEARCH is a slightly misremembered copy of the file (measured on real repos:
+    5 of 13 edits were 82-95% similar to the real code). Only when one region is >= min_ratio similar AND every
+    line the edit changes matches the file exactly: the real text is kept for the misremembered context lines.
+    Returns (new_text, first_line) or None. The proof still has to pass afterwards."""
+    import difflib
+
+    lines = text.splitlines(keepends=True)
+    s_lines, r_lines = search.splitlines(), replace.splitlines()
+    n = len(s_lines)
+    if n < 2 or len(lines) > 8000:
+        return None
+    norm = [l.strip() for l in s_lines]
+    real = [l.strip() for l in lines]
+    target = "\n".join(norm)
+    scored = []
+    for size in sorted({max(1, n + d) for d in (-2, -1, 0, 1, 2)}):
+        for st in range(0, len(lines) - size + 1):
+            sm = difflib.SequenceMatcher(None, target, "\n".join(real[st:st + size]), autojunk=False)   # character level
+            if sm.real_quick_ratio() >= min_ratio and sm.quick_ratio() >= min_ratio:
+                r = sm.ratio()
+                if r >= min_ratio:
+                    scored.append((r, st, size))
+    if not scored:
+        return None
+    scored.sort(reverse=True)
+    r0, st, size = scored[0]
+    if any(st2 + size2 <= st or st2 >= st + size for _, st2, size2 in scored[1:]):
+        return None                                      # a second, separate region matches as well: ambiguous
+    window = real[st:st + size]
+    exact = {}                                           # SEARCH line index -> file line index, exact matches only
+    for a, b, k in difflib.SequenceMatcher(None, norm, window, autojunk=False).get_matching_blocks():
+        for t in range(k):
+            exact[a + t] = st + b + t
+    edits = [op for op in difflib.SequenceMatcher(None, s_lines, r_lines, autojunk=False).get_opcodes() if op[0] != "equal"]
+    if not edits:
+        return None
+    out = list(lines)
+    for tag, i1, i2, j1, j2 in reversed(edits):
+        new = [l + "\n" for l in r_lines[j1:j2]]
+        if tag == "insert":
+            if i1 in exact:
+                at = exact[i1]
+            elif i1 - 1 in exact:
+                at = exact[i1 - 1] + 1
+            else:
+                return None
+            out[at:at] = new
+            continue
+        idx = [exact.get(i) for i in range(i1, i2)]
+        if None in idx or idx != list(range(idx[0], idx[0] + len(idx))):
+            return None                                  # the lines being changed are themselves misremembered
+        out[idx[0]:idx[-1] + 1] = new
+    return "".join(out), st + 1
+
+
 @dataclass
 class FastResult:
     ok: bool = False
@@ -283,7 +339,8 @@ class FastPath:
                     ext = ".py" if (self.info.primary_language or "").lower() == "python" else ".js"
                     path = f"{SCRATCH_DIRNAME}/test_issue{ext}"
             fixed.append((path, search, replace))
-        res.edits = fixed
+        # measured on real repos: 5 of 13 replies repeated an edit verbatim; the copy failed and sank the whole answer
+        res.edits = [e for i, e in enumerate(fixed) if e not in fixed[:i]]
         for path, search, replace in res.edits:
             self.events.emit("tool_call", name="str_replace_editor", brief=f"{'create' if not search.strip() else 'edit'} {path}")
             try:
@@ -297,7 +354,16 @@ class FastPath:
                     if path.startswith(SCRATCH_DIRNAME + "/") and not res.test_path:
                         res.test_path = path
                 else:
-                    self.toolbox.editor.str_replace(path, search, replace)
+                    try:
+                        self.toolbox.editor.str_replace(path, search, replace)
+                    except Exception as miss:  # noqa: BLE001
+                        f = self.root / path
+                        near = near_miss_apply(f.read_text(errors="replace"), search, replace) if f.is_file() else None
+                        if near is None:
+                            raise miss
+                        f.write_text(near[0])
+                        self.events.emit("log", level="info", message=f"edit to {path}: SEARCH text was a near miss; "
+                                         f"applied to the matching region at line {near[1]} (real text kept)")
                 self.events.emit("tool_result", name="str_replace_editor", output=f"applied to {path}", is_error=False,
                                  meta={"edited": True})
             except Exception as e:  # noqa: BLE001
