@@ -474,6 +474,21 @@ async function submitGithub() {
 
 function copyPath() { if (cur && cur.repoPath) navigator.clipboard.writeText(cur.repoPath); }
 
+/* ---------------- stop everything ---------------- */
+async function stopAll() {
+  const b = $("#stop-all"); b.disabled = true; b.textContent = "Stopping…";
+  try { const r = await api("/api/stop-all", {}); b.textContent = `Stopped ${r.runs} run(s)`; } catch (e) { b.textContent = "■ Stop everything"; }
+  setTimeout(() => { b.disabled = false; b.textContent = "■ Stop everything"; pollActive(); }, 2500);
+}
+async function pollActive() {
+  try {
+    const runs = await api("/api/runs");
+    $("#stop-all").hidden = !runs.some((r) => !["done", "error", "interrupted"].includes(r.status));
+  } catch (e) {}
+}
+setInterval(pollActive, 3000);
+document.addEventListener("keydown", (e) => { if (e.key === "." && (e.metaKey || e.ctrlKey)) stopAll(); });   // ⌘. = stop everything
+
 /* ---------------- boot ---------------- */
 loadModel().then(loadModelPicker); loadDemos(); understood();
 const m = location.hash.match(/run=([\w-]+)/), mb = location.hash.match(/batch=([\w-]+)/);

@@ -520,6 +520,21 @@ class Studio:
                 it["status"] = "cancelled"
         batch.save(self.runs)
 
+    def stop_all(self) -> Dict[str, int]:
+        """The big red button: cancel every batch and run, abort model calls, kill running commands."""
+        from ..tools.shell import kill_all_commands
+        batches = runs = 0
+        for b in list(self.batches.values()):
+            if b.status not in ("done", "stopped") and not str(b.status).startswith("error"):
+                self.stop_batch(b)
+                batches += 1
+        for run in list(self.runs.values()):
+            if run.status not in ("done", "error", "interrupted"):
+                self.stop_run(run)
+                runs += 1
+        killed = kill_all_commands()
+        return {"batches": batches, "runs": runs, "commands_killed": killed}
+
     # ------------------------------------------------------------------ GitHub
     def github_preview(self, run: Run, kind: str) -> Dict[str, Any]:
         from . import github
@@ -661,6 +676,8 @@ def make_handler(studio: Studio):
                     batch = studio.start_batch(b.get("repo", ""), [int(n) for n in b.get("numbers") or []], bool(b.get("want_pr")),
                                                bool(b.get("auto_pr")))
                     return self._json({"id": batch.id})
+                if p == "/api/stop-all":
+                    return self._json(studio.stop_all())
                 m = re.fullmatch(r"/api/batches/([\w-]+)/stop", p)
                 if m and m.group(1) in studio.batches:
                     studio.stop_batch(studio.batches[m.group(1)])

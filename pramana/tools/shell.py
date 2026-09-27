@@ -158,6 +158,25 @@ def truncate(text: str, max_chars: int = 12000, head_frac: float = 0.45) -> (str
     return head + marker + tail, n_lines
 
 
+RUNNING: Dict[int, subprocess.Popen] = {}   # process group id -> process, for "stop everything"
+_RUNNING_LOCK = __import__("threading").Lock()
+
+
+def kill_all_commands() -> int:
+    """Kill every command the harness is running right now (their whole process groups)."""
+    with _RUNNING_LOCK:
+        procs = list(RUNNING.items())
+    for pgid, proc in procs:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                proc.kill()
+            except OSError:
+                pass
+    return len(procs)
+
+
 def run_command(
     command: str,
     cwd: Path,
@@ -179,6 +198,8 @@ def run_command(
             )
         except OSError as e:
             return CommandResult(command, None, f"failed to start command: {e}", 0.0)
+        with _RUNNING_LOCK:
+            RUNNING[proc.pid] = proc
         timed_out = False
         try:
             proc.wait(timeout=timeout)
@@ -189,6 +210,9 @@ def run_command(
             except (ProcessLookupError, PermissionError):
                 proc.kill()
             proc.wait()
+        finally:
+            with _RUNNING_LOCK:
+                RUNNING.pop(proc.pid, None)
         out.seek(0, os.SEEK_END)
         size = out.tell()
         cap = 4 * 1024 * 1024

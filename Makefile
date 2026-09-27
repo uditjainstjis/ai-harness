@@ -12,7 +12,7 @@ VENV    := .venv
 BIN     := $(VENV)/bin
 PRAMANA := $(BIN)/pramana
 
-.PHONY: tui setup run test clean doctor bench help
+.PHONY: stop tui setup run test clean doctor bench help
 
 help:
 	@sed -n '2,7p' Makefile
@@ -27,6 +27,10 @@ run:
 	else \
 		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) ui; \
 	fi
+
+stop:
+	@curl -s -m 5 -X POST http://127.0.0.1:8765/api/stop-all 2>/dev/null && echo || true
+	@pkill -f "pramana (solve|run|bench)" 2>/dev/null; echo "stopped everything Pramana was running"
 
 tui:
 	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
