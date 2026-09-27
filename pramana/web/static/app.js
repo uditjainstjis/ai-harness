@@ -476,7 +476,7 @@ async function submitGithub() {
   try {
     const r = await api(`/api/runs/${ghRun}/github`, { kind: ghKind, title: $("#gh-title").value, body: $("#gh-desc").value,
       branch: ghPreview && ghPreview.branch, files: ghPreview && ghPreview.files });
-    if (r.ok) { $("#gh-status").innerHTML = `✓ Created: <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a>`; }
+    if (r.ok) { $("#gh-status").innerHTML = `✓ ${r.updated ? "Already open (updated)" : "Created"}: <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a>`; }
     else { $("#gh-status").innerHTML = `<span style="color:var(--bad)">✗ ${esc(String(r.error || "failed").slice(0, 300))}</span>`; btn.disabled = false; }
   } catch (e) { $("#gh-status").innerHTML = `<span style="color:var(--bad)">✗ ${esc(e.message)}</span>`; btn.disabled = false; }
 }

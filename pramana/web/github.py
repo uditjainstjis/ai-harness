@@ -156,7 +156,7 @@ def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", f
             for f in files or []:
                 _run(["git", "add", "--", f], cwd=repo)
             code, out = _run(git + ["commit", "-m", title, "-m", "Prepared with Pramana; verified on the original and the patched code."], cwd=repo)
-            if code != 0 and "nothing to commit" not in out:
+            if code != 0 and "nothing to commit" not in out and "nothing added to commit" not in out:   # a repeat click: already committed
                 return {"ok": False, "error": "could not commit: " + out[-400:]}
         owner = slug.split("/")[0]
         if can_push:
