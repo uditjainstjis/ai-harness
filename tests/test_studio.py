@@ -73,3 +73,18 @@ def test_every_run_is_kept_on_disk_and_reloaded(tmp_path, monkeypatch):
     assert run.id in (studio.home / "index.jsonl").read_text()
     again = Studio({"paths": paths})       # a restart
     assert run.id in again.runs and again.runs[run.id].result is not None
+
+
+def test_config_is_thread_safe_and_honours_the_model_choice(monkeypatch):
+    import os
+    import threading
+    monkeypatch.setenv("AI_API_KEY", "nvapi-test")
+    studio = Studio()
+    studio.set_model({"mode": "env", "model": "nvidia/model-b"})
+    before = dict(os.environ)
+    seen = []
+    ts = [threading.Thread(target=lambda: seen.append(studio.config().model.name)) for _ in range(20)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert set(seen) == {"nvidia/model-b"}
+    assert dict(os.environ) == before          # the environment was never touched

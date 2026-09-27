@@ -249,21 +249,22 @@ class Studio:
 
     # ------------------------------------------------------------------ model settings
     def config(self) -> Config:
-        env_backup = {}
-        try:
-            for k, v in self.session_model.items():   # applied only while loading the config
-                env_backup[k] = os.environ.get(k)
-                if v:
-                    os.environ[k] = v
-                else:
-                    os.environ.pop(k, None)
-            return load_config(self.overrides)
-        finally:
-            for k, v in env_backup.items():
-                if v is None:
-                    os.environ.pop(k, None)
-                else:
-                    os.environ[k] = v
+        """The environment's config with this session's model choice applied on top. Never touches
+        os.environ (parallel runs load their config at the same moment)."""
+        from ..config import resolve_provider
+        cfg = load_config(self.overrides)
+        sm = dict(self.session_model)
+        if not sm:
+            return cfg
+        if set(sm) == {"AI_MODEL"}:                       # same provider and key, another model
+            cfg.model.name = sm["AI_MODEL"]
+            return cfg
+        cfg.api_key = sm.get("AI_API_KEY", cfg.api_key) or ""
+        cfg.model.provider = sm.get("AI_PROVIDER") or "auto"
+        cfg.model.base_url = sm.get("AI_BASE_URL") or ""
+        cfg.model.name = sm.get("AI_MODEL") or ""
+        resolve_provider(cfg)
+        return cfg
 
     def model_info(self) -> Dict[str, Any]:
         try:
