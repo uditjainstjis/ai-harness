@@ -8,7 +8,8 @@ fail→pass demonstration instead of a claim. Same model as everyone else; the h
 engineering.
 
 ```bash
-export AI_API_KEY="<key>"     # provider auto-detected from the key (OpenAI, Anthropic, Gemini, Groq, OpenRouter, ...)
+export AI_API_KEY="<key>"     # provider auto-detected from the key (DeepSeek, OpenAI, Anthropic, Gemini, NVIDIA, Qwen, Groq, OpenRouter, ...)
+export AI_MODEL="<model id>"  # optional: the prescribed model (AI_BASE_URL for any other OpenAI-compatible endpoint)
 make setup                    # installs into ./.venv (uv if present, else venv + pip)
 make run                      # opens Pramana Studio (the app): say what's wrong in plain words + the repo; make tui = terminal version
 make test                     # offline unit tests + (with a key) the end-to-end benchmark with hidden tests
@@ -21,6 +22,11 @@ terminal version in the same session.
 
 Non-interactive: `make run REPO=/path/or/git-url ISSUE=https://github.com/o/r/issues/123 TEST="pytest tests/test_x.py"`
 (the issue can also be piped on stdin).
+
+Several issues at once: give the repo and say "fix #3, #5 and #8" (or "fix the open issues" and tick them). Each issue gets its own
+clone and branch and runs in parallel under one shared rate limiter; the Studio shows a live clock, what every issue is doing and
+where its seconds went (model / tools / proof). Proven fixes can become pull requests one by one, or automatically. Stop ends
+everything at once (button, ⌘., or `make stop`). Every run is logged under `runs/`.
 
 ![Pramana live view: phases, tool calls, the submit gate comparing original vs patched code, reviewer](docs/panel-config-merge.svg)
 
@@ -38,6 +44,21 @@ Non-interactive: `make run REPO=/path/or/git-url ISSUE=https://github.com/o/r/is
                                                                                       └── rejected → back to agent ◀┘
                                            attempt 2 (fresh context + lessons) only if attempt 1 ends without proof
 ```
+
+### Fast path: small issues in one call, big ones get the whole harness
+
+A zero-token triage sizes the issue (small / medium / large). Small and medium issues first get **one call** that must return the
+edits **and** a test that fails on the original code; the same submit gate runs it on the original and the patched code. Only a
+fail→pass result is accepted. A second round carries the exact reason the first was not accepted; anything still unproven
+escalates to the full agent with those lessons. On a 10-issue repository this took all ten to **verified in 6 min 52 s with 54
+calls** (the full-agent pipeline alone: 8/10 in ~11.5 min with ~204 calls).
+
+Measured failure modes of one-shot answers on real repositories are handled, and each only acts when something failed, so the
+easy path is unchanged: an edit the model repeated verbatim is applied once; SEARCH text that is a near miss (≥ 90 % similar, one
+region, the changed lines themselves exact) lands on the real code with the file's own context kept; a wrong file path is resolved
+from the SEARCH text; a reply cut off mid-reasoning gets one "final answer now" call instead of spending a round; and a test that
+fails even with the fix is named as a broken test. A change that only touches docs, config or CI files is reported as a patch to
+review, never as verified, and an empty patch is never verified.
 
 ### Five layers of evidence, every one of them executed
 
@@ -80,8 +101,11 @@ tools; tool calls written as text (XML, `<invoke>`, Hermes, Qwen, JSON) are reco
 anything a model "imagines" after its calls (self-written results) is discarded. Unsupported
 parameters are dropped and remembered (`temperature` on reasoning models, `max_tokens` vs
 `max_completion_tokens`, ...). 5xx errors get retries that *perturb* the request (some endpoints
-fail deterministically on one transcript). Reasoning models (gpt-oss) get their own recent reasoning
-passed back. Context overflow triggers compaction.
+fail deterministically on one transcript). Thinking models get their reasoning passed back
+(DeepSeek-style APIs reject a tool conversation without every turn's `reasoning_content`; the field
+name is negotiated). Context overflow triggers compaction. Requests share a per-endpoint limiter
+that backs off once per burst of 429s and recovers on its own; an endpoint that stops answering
+ends the run with a clear message instead of hanging.
 
 ### Keeping the agent on track
 
@@ -110,6 +134,20 @@ calls and wall time.
 ## Measured results
 
 Everything below was produced by this repository; the harness is graded by tests it never sees.
+
+**Live open issues on real projects** (2026-09-27) — 13 open bug reports, each first reproduced on the project's current default
+branch, run all at once with `nvidia/nemotron-3-super-120b-a12b` (free tier). Every verified fix was then read by a person and
+its project's full test suite run with it:
+
+| project | verified | review of the verified fixes |
+|---|---|---|
+| `Textualize/rich` (57k★) | **6/6** (154–740 s each) | 5 merge-quality (no new failures in Rich's ~950 tests); #3643 works but changes a default |
+| `arrow-py/arrow` (9k★) | **1/2** | #1124 merge-quality (1902/1902 tests), submitted upstream as [arrow-py/arrow#1364](https://github.com/arrow-py/arrow/pull/1364) with a regression test |
+| `andialbrecht/sqlparse` (4k★) | **1/5** | #779 fixes the report but changes how `GRANT … ON a, b TO role` groups, which no existing test covers |
+
+The other five (sqlparse parser bugs, an arrow humanize bug) were stopped after 33–77 calls without a proof. "Verified" means
+proven by execution; review found 2 of the 8 not merge-ready, which is why the evidence bundle shows the checks rather than a
+verdict alone.
 
 **SWE-bench Verified** (real GitHub issues, graded by their hidden `FAIL_TO_PASS` + `PASS_TO_PASS`
 tests) — 19-instance stratified sample, run locally without Docker through the same code path as
@@ -153,7 +191,8 @@ Three model families, both tool-calling styles, same harness and same tasks. On 
 blind independent test writer produced a passing regression test for all four tasks, each one
 failing on the original code and passing on the patch.
 
-**Offline tests** (`make test`, no API key): 37 tests. Unit coverage for the editor's tolerant
+**Offline tests** (`make test`, no API key): 60 tests. Unit coverage for the fast path (one-call fixes, repeated and near-miss
+edits, cut-off replies, new files kept, config-only changes not verified), the rate limiter and Stop, the editor's tolerant
 matching, lint gate and CRLF/BOM preservation; the submit gate's fail→pass / regression
 classification; git patch isolation; the text tool protocol; tool-name and argument
 canonicalisation; localization; dependency-stub rejection; and both provider wire formats against a
@@ -193,7 +232,8 @@ bundle).
 | `gsk_` | Groq | `openai/gpt-oss-120b` |
 | `sk-or-` | OpenRouter | `openai/gpt-oss-120b` |
 | `xai-`, `nvapi-`, `csk-`, `hf_`, `fw_`, `tgp_` | xAI, NVIDIA, Cerebras, Hugging Face, Fireworks, Together | see `pramana/config.py` |
-| `sk-` | OpenAI | `gpt-5-mini` |
+| `sk-proj-`, `sk-svcacct-`, `sk-admin-` | OpenAI | `gpt-5-mini` |
+| `sk-` (plain) | probed: DeepSeek, OpenAI, Moonshot, DashScope (the first that accepts the key) | that provider's coding model, e.g. `deepseek-flash` |
 | anything else | any OpenAI-compatible endpoint: set `AI_BASE_URL` (+ `AI_MODEL`) | |
 
 Azure OpenAI is detected from the URL (or `AI_PROVIDER=azure`): it authenticates with the `api-key`
@@ -217,6 +257,7 @@ pramana/
   agent/                 prompts, loop, submit gate, context manager, orchestrator
   report/                evidence bundle writer
   ui/                    live terminal view
+  web/                   Pramana Studio (the app: single runs, batches, pull requests, history)
 bench/tasks/             end-to-end tasks with hidden tests (make test)
 tests/                   offline unit tests
 ```
