@@ -232,20 +232,31 @@ def cmd_run(args) -> int:
 def cmd_ui(args) -> int:
     """The desktop-style app. Without a display (a headless server) the app is still served for port
     forwarding, and the terminal session runs in the foreground so nothing ever waits on a window."""
+    import threading
+    import time
+
     from .web.server import has_display, serve
 
     overrides = _overrides(args)
-    if has_display():
-        serve(port=args.port, open_app=not args.no_open, overrides=overrides)
+    window = has_display() and not args.no_open
+    if not sys.stdin.isatty():          # started without a terminal (double-click, pipe): the app alone
+        serve(port=args.port, open_app=window, overrides=overrides)
         return 0
-    import threading
-
-    threading.Thread(target=serve, kwargs={"port": args.port, "open_app": False, "overrides": overrides}, daemon=True).start()
-    console.print("[dim]No display found: the app is served above for port forwarding; the terminal session follows.[/]")
-    if sys.stdin.isatty():
-        return cmd_run(args)
-    threading.Event().wait()
-    return 0
+    # From a terminal both front ends run on the same harness: the app (its own window when there is a display,
+    # served for port forwarding otherwise) and the terminal session right here, so an evaluator can supply the
+    # issue in whichever one they expect.
+    threading.Thread(target=serve, kwargs={"port": args.port, "open_app": window, "overrides": overrides}, daemon=True).start()
+    time.sleep(0.8)                      # let the app print its address before the terminal session starts
+    where = ("The app is open in its own window" if window else "The app is served at the address above" if has_display()
+             else "No display found: the app is served at the address above (port forwarding)")
+    console.print(f"[dim]{where}; the terminal session below works the same way.[/]")
+    rc = cmd_run(args)
+    console.print("[dim]Terminal session ended; the app keeps running until Ctrl-C.[/]")
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+    return rc
 
 
 def cmd_solve(args) -> int:

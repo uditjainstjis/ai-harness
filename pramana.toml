@@ -5,7 +5,8 @@
 
 [model]
 # auto = detect from the key prefix (sk-ant- -> Anthropic, AIza -> Gemini, gsk_ -> Groq,
-# sk-or- -> OpenRouter, xai- -> xAI, nvapi- -> NVIDIA, hf_ -> Hugging Face, sk- -> OpenAI, ...).
+# sk-or- -> OpenRouter, xai- -> xAI, nvapi- -> NVIDIA, hf_ -> Hugging Face, sk-proj- -> OpenAI; a plain sk- key
+# is probed: DeepSeek, OpenAI, Moonshot, DashScope).
 provider = "auto"
 # Empty = the provider's default. Set this to the Organising Committee's prescribed model.
 name = ""
