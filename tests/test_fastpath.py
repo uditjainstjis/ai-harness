@@ -121,3 +121,15 @@ def test_an_edit_with_a_wrong_path_lands_in_the_file_that_holds_its_text(tmp_pat
     repo, res = _solve(tmp_path, REPLY.replace("mathx/stats.py\n<<<<<<<", "mathx/statistics.py\n<<<<<<<", 1))
     assert res.status == "verified", res.error
     assert "if not xs" in (repo / "mathx" / "stats.py").read_text()
+
+
+def test_a_reply_cut_off_while_reasoning_does_not_use_up_the_second_round(tmp_path):
+    """Measured on sqlparse/arrow with a 120B model: 6 of 13 first replies were ~30k chars of reasoning cut off at the
+    output limit, which spent round 1; the answer that followed then had no round left to correct a bad edit."""
+    repo, cfg = _proj(tmp_path)
+    thinking = {"text": "We are given an issue: mean([]) divides by zero. " * 40, "stop_reason": "length"}
+    bad_edit = {"text": REPLY.replace("    return sum(xs) / len(xs)\n=======", "    return sum(values) / len(values)\n=======")}
+    model = ChatModel(MockLLM([thinking, bad_edit, {"text": REPLY}]), tool_mode="native", name="mock", provider="mock")
+    res = Orchestrator(cfg, Events(), model=model).solve(repo, issue_from_text("mean([]) raises ZeroDivisionError\n\nIt should return 0.0."))
+    assert res.status == "verified", res.error
+    assert res.usage.calls == 3                      # reasoning, finish-now answer, corrected answer

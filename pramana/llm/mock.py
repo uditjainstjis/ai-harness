@@ -25,5 +25,5 @@ class MockLLM:
             item = self.script.pop(0)
         calls = [ToolCall(id=new_call_id(), name=c["name"], arguments=c.get("arguments", {})) for c in item.get("tool_calls", [])]
         chars = sum(len(str(m.get("content") or "")) for m in messages)
-        return LLMResponse(text=item.get("text", ""), tool_calls=calls,
+        return LLMResponse(text=item.get("text", ""), tool_calls=calls, stop_reason=item.get("stop_reason", ""),
                            usage=Usage(input_tokens=chars // 4, output_tokens=50, calls=1))

@@ -61,6 +61,10 @@ Rules: fix the root cause in the source code; never edit existing tests; keep th
 allows; if the same bug appears in several places, include every edit.
 """
 
+FINISH_NOW = ("You ran out of space while thinking. Stop analysing now. Reply with ONLY the final answer in the exact "
+              "format: DIAGNOSIS:, then each edit (file path line, SEARCH text copied exactly from the files you were shown, "
+              "REPLACE), then the test file, then TEST_COMMAND. No explanation.")
+
 BLOCK_RE = re.compile(r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> REPLACE", re.S)
 
 
@@ -188,6 +192,17 @@ class FastPath:
             reply = self._ask(msgs, res)
             if reply is None:
                 return self._done(res, t0)
+            if "<<<<<<< SEARCH" not in reply and (self._stop in ("length", "max_tokens") or len(reply) > 12000):
+                # measured on real repos: a model that reasons in its answer ran out of room before any edit
+                # (6 of 13 first replies). Its reasoning is kept; one short call turns it into the answer.
+                self._keep(reply, rnd * 10)
+                self.events.emit("log", level="info", message="fast path: the reply ran out of room while reasoning; "
+                                 "asking for the final answer")
+                done = self._ask(msgs + [{"role": "assistant", "content": reply},
+                                         {"role": "user", "content": FINISH_NOW}], res)
+                if done is None:
+                    return self._done(res, t0)
+                reply = done
             self._keep(reply, rnd)
             feedback = self._attempt(reply, res)
             if res.ok or rnd == 2 or not feedback:
@@ -198,10 +213,12 @@ class FastPath:
         return self._done(res, t0)
 
     def _ask(self, msgs, res: FastResult) -> Optional[str]:
+        self._stop = ""
         for tries in range(3):   # a busy endpoint is not a hard issue: wait it out rather than escalate
             try:
                 resp = self.model.chat(msgs, tools=None, temperature=0.0)
                 text = resp.text or ""
+                self._stop = (resp.stop_reason or "").lower()
                 self.events.emit("llm", text=text[:1500], total_tokens=self.model.usage.total_tokens, cached_tokens=0)
                 return text
             except (ModelUnresponsive, Cancelled):
