@@ -61,3 +61,63 @@ def test_easy_issue_is_verified_in_one_call(tmp_path, monkeypatch):
     assert res.usage.calls == 1                                   # one model call, nothing else
     assert "if not xs" in (repo / "mathx" / "stats.py").read_text()
     assert any(c.verdict == "fixes" for c in res.verification.checks)
+
+
+def _proj(tmp_path):
+    repo = tmp_path / "proj"
+    (repo / "mathx").mkdir(parents=True)
+    (repo / "mathx" / "__init__.py").write_text("")
+    (repo / "mathx" / "stats.py").write_text("def mean(xs):\n    return sum(xs) / len(xs)\n")
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    for cmd in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=repo, check=True, env=env)
+    cfg = load_config()
+    cfg.runs_dir = str(tmp_path / "runs")
+    return repo, cfg
+
+
+def _solve(tmp_path, reply, text="mean([]) raises ZeroDivisionError\n\nIt should return 0.0."):
+    repo, cfg = _proj(tmp_path)
+    model = ChatModel(MockLLM([{"text": reply}] * 2), tool_mode="native", name="mock", provider="mock")
+    return repo, Orchestrator(cfg, Events(), model=model).solve(repo, issue_from_text(text))
+
+
+def test_a_new_file_that_is_the_fix_stays_in_the_patch(tmp_path):
+    """Measured on PR-Agent #3050: a file the fix created was dropped as a 'side effect', leaving an empty patch."""
+    reply = REPLY.replace("mathx/stats.py\n<<<<<<< SEARCH\n    return sum(xs) / len(xs)\n=======\n    if not xs:\n        return 0.0\n    return sum(xs) / len(xs)\n",
+                          "mathx/safe.py\n<<<<<<< SEARCH\n=======\ndef safe_div(a, b):\n    return a / b if b else 0.0\n>>>>>>> REPLACE\n\n"
+                          "mathx/stats.py\n<<<<<<< SEARCH\n    return sum(xs) / len(xs)\n=======\n    from mathx.safe import safe_div\n    return safe_div(sum(xs), len(xs))\n")
+    repo, res = _solve(tmp_path, reply)
+    assert res.status == "verified", res.error
+    assert "mathx/safe.py" in res.patch and "safe_div" in res.patch
+
+
+def test_a_change_to_config_files_only_is_not_called_verified(tmp_path):
+    """A test that reads back a file the model just wrote proves nothing about behaviour."""
+    reply = f"""DIAGNOSIS: the workflow is missing.
+
+.github/workflows/review.yml
+<<<<<<< SEARCH
+=======
+name: review
+on: pull_request
+>>>>>>> REPLACE
+
+.pramana/test_issue.py
+<<<<<<< SEARCH
+=======
+import os
+assert os.path.exists(".github/workflows/review.yml")
+>>>>>>> REPLACE
+
+TEST_COMMAND: {PY} .pramana/test_issue.py
+"""
+    repo, res = _solve(tmp_path, reply, "Add a review workflow\n\nWe should review every pull request.")
+    assert res.status == "patched"
+    assert ".github/workflows/review.yml" in res.patch
+
+
+def test_an_edit_with_a_wrong_path_lands_in_the_file_that_holds_its_text(tmp_path):
+    repo, res = _solve(tmp_path, REPLY.replace("mathx/stats.py\n<<<<<<<", "mathx/statistics.py\n<<<<<<<", 1))
+    assert res.status == "verified", res.error
+    assert "if not xs" in (repo / "mathx" / "stats.py").read_text()

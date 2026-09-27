@@ -43,15 +43,24 @@ def _bootstrap_python(repo: Path, log, timeout_s: int) -> List[str]:
             fh.write("\n/.venv/\n")
     _log(log, "creating .venv for the target repository")
     uv = shutil.which("uv")
-    try:
-        if uv:
-            subprocess.run([uv, "venv", "-q", str(venv)], check=True, cwd=repo, timeout=180)
-            pip = [uv, "pip", "install", "-q", "--python", str(venv / "bin" / "python")]
-        else:
-            subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True, cwd=repo, timeout=180)
+    pip: Optional[List[str]] = None
+    if uv:
+        # --no-config: a project's [tool.uv] settings (e.g. required-version pinned to a newer uv) must not stop setup
+        try:
+            subprocess.run([uv, "venv", "-q", "--no-config", str(venv)], check=True, cwd=repo, timeout=180,
+                           capture_output=True, text=True)
+            pip = [uv, "pip", "install", "-q", "--no-config", "--python", str(venv / "bin" / "python")]
+        except (subprocess.SubprocessError, OSError) as e:
+            err = (getattr(e, "stderr", "") or str(e)).strip().splitlines()
+            _log(log, f"uv could not create the venv ({err[-1][:160] if err else e}); using python -m venv")
+            shutil.rmtree(venv, ignore_errors=True)
+    if pip is None:
+        try:
+            subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True, cwd=repo, timeout=180,
+                           capture_output=True, text=True)
             pip = [str(venv / "bin" / "python"), "-m", "pip", "install", "-q"]
-    except (subprocess.SubprocessError, OSError) as e:
-        return [f"could not create a venv: {e}"]
+        except (subprocess.SubprocessError, OSError) as e:
+            return [f"could not create a venv: {e}"]
 
     def pip_install(args: List[str], what: str) -> bool:
         try:

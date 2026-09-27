@@ -246,8 +246,11 @@ class Orchestrator:
                 if fast.ok:
                     from .loop import AttemptResult
 
+                    edits = [(p, s) for p, s, _ in (fast.edits or []) if p and not p.startswith(SCRATCH_DIRNAME + "/")]
                     ar = AttemptResult(number=1, steps=1, stop_reason="fast_path", verification=fast.verification,
-                                       patch=git.patch(), summary=fast.diagnosis or "fixed in one call", elapsed_s=fast.elapsed_s)
+                                       patch=git.patch(), summary=fast.diagnosis or "fixed in one call", elapsed_s=fast.elapsed_s,
+                                       created_files=[p for p, s in edits if not s.strip()],   # new files ARE the fix,
+                                       touched_files=[p for p, _ in edits])                     # not side effects
                     result.attempts.append(ar)
                 elif fast.stage != "no-reply":
                     lessons = fast.lessons()
@@ -305,11 +308,19 @@ class Orchestrator:
                 result.verification = best.verification
                 result.summary = best.summary
                 result.status = "verified" if best.strength == "strong" else "patched"
+                if result.status == "verified" and not touches_code(best.patch):
+                    result.status = "patched"
+                    ev.emit("log", level="warn", message="the change only touches docs/config/CI files: a test cannot prove "
+                            "it, so it is reported as a patch to review, not as verified")
             else:
                 if current.strip():
                     git.reset_to_base()
                 result.status = "no_patch"
             self._tidy(root, git, run_dir, result)
+            if result.status in ("verified", "patched") and not (result.patch or "").strip():
+                result.status = "no_patch"          # proof of a change that is not in the patch proves nothing
+                result.error = "the change was removed from the patch during clean-up, so there is nothing to submit"
+                ev.emit("log", level="warn", message=result.error)
         except (FatalModelError, ModelUnresponsive, Cancelled) as e:
             stopped = isinstance(e, Cancelled) or "stopped by the user" in str(e)
             result.status, result.error = ("cancelled", "stopped by the user") if stopped else ("error", f"model unavailable: {e}")
@@ -398,6 +409,15 @@ class Orchestrator:
             if restored:
                 self.events.emit("log", level="info", message=f"restored lockfiles changed by installs: {', '.join(restored)}")
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+NON_CODE_EXT = (".md", ".rst", ".txt", ".adoc", ".yml", ".yaml", ".json", ".toml", ".cfg", ".ini", ".lock", ".svg", ".png")
+
+
+def touches_code(patch: str) -> bool:
+    """True when the patch changes at least one file whose behaviour a test can exercise (not docs/config/CI)."""
+    files = [f for f in re.findall(r"^diff --git a/.* b/(.+)$", patch or "", flags=re.M) if not f.startswith(SCRATCH_DIRNAME + "/")]
+    return any(not (f.startswith((".github/", "docs/")) or f.lower().endswith(NON_CODE_EXT)) for f in files)
 
 
 def pick_best(attempts: List[AttemptResult]) -> Optional[AttemptResult]:

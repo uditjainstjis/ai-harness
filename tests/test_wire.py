@@ -182,6 +182,26 @@ def test_throttle_halves_on_429_and_grows_on_success():
     assert t.limit == 3                     # additive increase after 5 clean replies
 
 
+def test_throttle_burst_of_429s_is_one_signal_and_heals():
+    """Measured on NVIDIA: four 429s in 40 s took the old limiter 6 -> 3 -> 1 and the next batch inherited it."""
+    from pramana.llm.openai_compat import _Throttle
+    t = _Throttle(start=6, cap=12)
+    for _ in range(4):                      # one burst
+        t.acquire()
+        t.release(429, pause=0.0)
+    assert t.limit == 3
+    t.last_cut -= 60                        # a later, separate burst may cut again, but never below the floor
+    for _ in range(3):
+        t.acquire()
+        t.release(429, pause=0.0)
+        t.last_cut -= 60
+    assert t.limit == 2
+    t.last_used -= 120                      # idle for two minutes: the next batch starts fresh
+    t.acquire()
+    assert t.limit == 6
+    t.release(200)
+
+
 class _SlowServer:
     """Answers after `delay` seconds (a stuck free-tier endpoint)."""
 

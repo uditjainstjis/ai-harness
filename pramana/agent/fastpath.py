@@ -39,8 +39,8 @@ Reply in exactly this format, starting directly with "DIAGNOSIS:" (no preamble, 
 
 DIAGNOSIS: <one or two sentences: the root cause>
 
-Then every source edit, each as:
-path/relative/to/the/repo/file.ext
+Then every source edit, each as (the file path alone on the line above the block, e.g. {example_path}):
+{example_path}
 <<<<<<< SEARCH
 exact lines copied from the file above (enough lines to be unique)
 =======
@@ -180,7 +180,8 @@ class FastPath:
             root=self.root, issue=issue_text[:14000], overview=(self.info.overview or "")[:5000],
             error_block=(f"\n<what_happens_when_the_issue_code_runs>\n{snippet_block[:4000]}\n</what_happens_when_the_issue_code_runs>\n" if snippet_block else ""),
             files=gather_files(self.root, src), example_test=example,
-            test_command=self.info.test_command or "(unknown)", scratch=SCRATCH_DIRNAME, ext=ext)
+            test_command=self.info.test_command or "(unknown)", scratch=SCRATCH_DIRNAME, ext=ext,
+            example_path=src[0] if src else f"src/module{ext}")   # a real path: weak models copy placeholders verbatim
         msgs = [{"role": "system", "content": "You are an expert software engineer. Answer in the exact format requested."},
                 {"role": "user", "content": prompt}]
         for rnd in (1, 2):             # a second round gets the exact reason the first one was not accepted
@@ -242,6 +243,12 @@ class FastPath:
                 return rel
         return ""
 
+    def _contains(self, rel: str, search: str) -> bool:
+        try:
+            return search.strip() in (self.root / rel).read_text(errors="replace")
+        except OSError:
+            return False
+
     def _attempt(self, reply: str, res: FastResult) -> str:
         """Apply and prove one reply. '' when accepted (or not worth a retry), else the feedback for round 2."""
         res.diagnosis, res.edits, res.test_command = parse_reply(reply)
@@ -251,6 +258,8 @@ class FastPath:
                     "file path line directly followed by a <<<<<<< SEARCH / ======= / >>>>>>> REPLACE block, then TEST_COMMAND:.")
         fixed = []
         for path, search, replace in res.edits:
+            if path and search.strip() and not self._contains(path, search):
+                path = self._resolve_path(search) or path     # wrong or invented path, but the text exists elsewhere
             if not path:
                 path = self._resolve_path(search) if search.strip() else ""
                 if not path and not search.strip():
@@ -302,6 +311,15 @@ class FastPath:
                 return ("Your test PASSED on the original, unfixed code, so it does not show the bug. The edits were "
                         "reverted. Write a test that FAILS on the current code for exactly the reason in the issue (check the "
                         "concrete behaviour the issue describes), then give the source edits, the test and TEST_COMMAND again.")
+            broken = [c for c in v.checks if c.verdict in ("still_failing", "fails_both") and c.origin != "related-tests"]
+            if broken and not any(c.verdict == "fixes" for c in v.checks):
+                # measured: a model re-sent the same broken test when this was buried under the output table
+                why = broken[0].after.summary if broken[0].after else ""
+                return ("Your test FAILS EVEN WITH YOUR FIX, so the TEST ITSELF is most likely broken: it errors before it "
+                        f"reaches the behaviour. First error: {why}\nCopy how the project's own tests set things up (their "
+                        "imports, fixtures, helpers that start servers or build objects) and write the test the same way. "
+                        "The edits were reverted: reply again with the source edits, the corrected test and TEST_COMMAND.\n\n"
+                        "Full output:\n" + (v.feedback or "")[-2500:])
             return ("Your change was run on the original and on the patched code and was not accepted:\n"
                     + (v.feedback or "")[-2500:] + "\n\nThe edits were reverted. Reply again with corrected edits, the test and TEST_COMMAND.")
         if self.reviewer is not None:

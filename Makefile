@@ -11,6 +11,8 @@ SHELL   := /bin/bash
 VENV    := .venv
 BIN     := $(VENV)/bin
 PRAMANA := $(BIN)/pramana
+# the key reaches commands through the environment, never through a command line (visible in `ps`)
+export AI_API_KEY
 
 .PHONY: stop tui setup run test clean doctor bench help
 
@@ -23,9 +25,9 @@ setup:
 run:
 	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
 	@if [ -n "$(REPO)$(ISSUE)" ]; then \
-		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) run $(if $(REPO),--repo "$(REPO)") $(if $(ISSUE),--issue "$(ISSUE)") $(if $(TEST),--test "$(TEST)"); \
+		$(PRAMANA) run $(if $(REPO),--repo "$(REPO)") $(if $(ISSUE),--issue "$(ISSUE)") $(if $(TEST),--test "$(TEST)"); \
 	else \
-		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) ui; \
+		$(PRAMANA) ui; \
 	fi
 
 stop:
@@ -34,22 +36,22 @@ stop:
 
 tui:
 	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
-	@AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) run $(if $(REPO),--repo "$(REPO)") $(if $(ISSUE),--issue "$(ISSUE)") $(if $(TEST),--test "$(TEST)")
+	@$(PRAMANA) run $(if $(REPO),--repo "$(REPO)") $(if $(ISSUE),--issue "$(ISSUE)") $(if $(TEST),--test "$(TEST)")
 
 test:
 	@test -x $(PRAMANA) || { echo "Pramana is not installed yet: run 'make setup' first."; exit 1; }
 	@$(BIN)/python -m pytest -q tests
-	@if [ -n "$(AI_API_KEY)" ]; then \
-		AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) bench --suite quick --plain; \
+	@if [ -n "$$AI_API_KEY" ]; then \
+		$(PRAMANA) bench --suite quick --plain; \
 	else \
 		echo "AI_API_KEY is not set: skipped the end-to-end benchmark (unit tests only)."; \
 	fi
 
 doctor:
-	@AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) doctor
+	@$(PRAMANA) doctor
 
 bench:
-	@AI_API_KEY="$(AI_API_KEY)" $(PRAMANA) bench --suite $(or $(SUITE),mini) --plain
+	@$(PRAMANA) bench --suite $(or $(SUITE),mini) --plain
 
 clean:
 	@rm -rf $(VENV) runs workspace .pytest_cache build dist *.egg-info

@@ -72,14 +72,25 @@ def _debug_dump(payload: Dict[str, Any]) -> None:
 
 class _Throttle:
     """Process-wide, per-endpoint concurrency that adapts to rate limits (AIMD) and serves callers in
-    arrival order (no run starves while others keep calling). Starts at 6 requests in flight; +1 after every
-    5 clean replies (up to 12); halved on a 429, and everyone pauses together for the back-off."""
+    arrival order (no run starves while others keep calling). Starts at 6 requests in flight (cap 12, floor 2).
+    A burst of 429s is ONE signal: the limit is halved at most once per back-off window, and everyone pauses
+    together. It climbs back by one after every 5 clean replies, or every 15 s without a 429 while callers
+    wait, and an endpoint idle for a minute starts fresh, so one batch never inherits another's collapse."""
 
-    def __init__(self, start: int = 6, cap: int = 12) -> None:
+    def __init__(self, start: int = 6, cap: int = 12, floor: int = 2) -> None:
         import collections
-        self.limit, self.cap, self.in_flight, self.ok, self.cool_until = start, cap, 0, 0, 0.0
+        self.start, self.limit, self.cap, self.floor = start, start, cap, floor
+        self.in_flight, self.ok, self.cool_until = 0, 0, 0.0
+        self.last_cut, self.last_grow = 0.0, time.time()
+        self.last_used = self.last_grow
         self.queue = collections.deque()
         self.cond = threading.Condition()
+
+    def _heal(self, now: float) -> None:
+        if not self.in_flight and now - self.last_used > 60:
+            self.limit = max(self.limit, self.start)
+        elif self.queue and self.limit < self.cap and now - max(self.last_cut, self.last_grow) >= 15:
+            self.limit, self.last_grow = self.limit + 1, now
 
     def acquire(self) -> None:
         me = object()
@@ -87,11 +98,13 @@ class _Throttle:
             self.queue.append(me)
             while True:
                 now = time.time()
+                self._heal(now)
                 if now < self.cool_until:
                     self.cond.wait(timeout=self.cool_until - now)
                 elif self.queue[0] is me and self.in_flight < self.limit:
                     self.queue.popleft()
                     self.in_flight += 1
+                    self.last_used = now
                     self.cond.notify_all()
                     return
                 else:
@@ -99,14 +112,18 @@ class _Throttle:
 
     def release(self, status: int, pause: float = 0.0) -> None:
         with self.cond:
+            now = time.time()
             self.in_flight = max(0, self.in_flight - 1)
+            self.last_used = now
             if status == 429:
-                self.limit, self.ok = max(1, self.limit // 2), 0
-                self.cool_until = max(self.cool_until, time.time() + pause)
+                if now - self.last_cut >= max(pause, 10.0):     # the rest of a burst is the same signal
+                    self.limit, self.last_cut = max(self.floor, self.limit // 2), now
+                self.ok = 0
+                self.cool_until = max(self.cool_until, now + pause)
             elif 0 < status < 400:
                 self.ok += 1
                 if self.ok >= 5 and self.limit < self.cap:
-                    self.limit, self.ok = self.limit + 1, 0
+                    self.limit, self.ok, self.last_grow = self.limit + 1, 0, now
             self.cond.notify_all()
 
 

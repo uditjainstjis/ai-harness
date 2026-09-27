@@ -275,7 +275,22 @@ def list_github_issues(slug: str, state: str = "open", limit: int = 60) -> List[
         for d in r.json():
             if "pull_request" in d:
                 continue
-            out.append({"number": d.get("number"), "title": d.get("title", ""), "url": d.get("html_url", ""),
-                        "labels": [l.get("name", "") for l in d.get("labels", []) if isinstance(l, dict)],
-                        "body": (d.get("body") or "")[:600], "comments": d.get("comments", 0)})
+            out.append(_brief(d))
     return out
+
+
+def github_issue_brief(slug: str, number: int) -> Optional[Dict[str, Any]]:
+    """One issue in the same shape as list_github_issues (None for a pull request or a missing number): the
+    list only holds the newest issues, and a user may name an older one."""
+    with httpx.Client(timeout=30, headers=_gh_headers(), follow_redirects=True) as c:
+        r = c.get(f"https://api.github.com/repos/{slug}/issues/{number}")
+    if r.status_code != 200:
+        return None
+    d = r.json()
+    return None if "pull_request" in d else _brief(d)
+
+
+def _brief(d: Dict[str, Any]) -> Dict[str, Any]:
+    return {"number": d.get("number"), "title": d.get("title", ""), "url": d.get("html_url", ""),
+            "labels": [l.get("name", "") for l in d.get("labels", []) if isinstance(l, dict)],
+            "body": (d.get("body") or "")[:600], "comments": d.get("comments", 0)}

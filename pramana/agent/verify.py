@@ -91,6 +91,7 @@ class Verification:
 
 
 PYTEST_SUMMARY_RE = re.compile(r"=+ (.*(?:passed|failed|error|skipped|no tests ran).*) =+\s*$", re.M)
+ERROR_LINE_RE = re.compile(r"\b[A-Z]\w*(?:Error|Exception)\b\s*[:\]]|\bAssertionError\b|^\s*assert\b|panicked at")
 
 
 def summarize_output(out: str, code: Optional[int], timed_out: bool) -> str:
@@ -105,8 +106,10 @@ def summarize_output(out: str, code: Optional[int], timed_out: bool) -> str:
     if m2:
         return f"{m2.group(1)} tests: {m2.group(2).strip()}"[:160]
     lines = [l for l in out.strip().splitlines() if l.strip() and not l.startswith("[exit code")]
-    last = lines[-1].strip() if lines else ""
-    return f"exit {code}" + (f": {last[:120]}" if last else "")
+    # the first "SomethingError: message" line says why; the last line is often just "}" of an object dump
+    err = next((l.strip() for l in lines if ERROR_LINE_RE.search(l)), "")
+    last = err or (lines[-1].strip() if lines else "")
+    return f"exit {code}" + (f": {last[:160]}" if last else "")
 
 
 def shadowed_dependencies(root: Path, added: List[str], files: List[str]) -> List[Tuple[str, str]]:

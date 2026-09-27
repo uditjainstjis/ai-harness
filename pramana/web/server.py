@@ -343,6 +343,11 @@ class Studio:
         issues = list_github_issues(slug)
         if isinstance(intent, list) and len(intent) == 1:
             return {"single": f"https://github.com/{slug}/issues/{intent[0]}", "repo": slug}
+        if isinstance(intent, list):     # named issues older than the listed ones still belong in the picker
+            from ..repo.issue import github_issue_brief
+            have = {i["number"] for i in issues}
+            named = [b for b in (github_issue_brief(slug, n) for n in intent if n not in have) if b]
+            issues = named + issues
         pre = intent if isinstance(intent, list) else [i["number"] for i in issues]
         return {"select_issues": True, "repo": slug, "issues": issues, "preselect": pre}
 
@@ -351,7 +356,13 @@ class Studio:
         if not numbers:
             raise ValueError("Pick at least one issue.")
         try:
+            from ..repo.issue import github_issue_brief
             titles = {i["number"]: i["title"] for i in list_github_issues(slug)}
+            for n in numbers:
+                if n not in titles:
+                    b = github_issue_brief(slug, n)
+                    if b:
+                        titles[n] = b["title"]
         except Exception:  # noqa: BLE001
             titles = {}
         batch = Batch(slug, numbers, want_pr, self.home, titles, auto_pr)
@@ -409,6 +420,9 @@ class Studio:
                     run.save("result.json", r)
                     if batch.auto_pr and r.get("status") == "verified":   # automatic only when proven
                         self._auto_pr(run)
+                if batch.auto_pr and r.get("status") != "verified":      # say why, instead of silently skipping
+                    run.push("log", {"level": "info", "message": f"no automatic pull request: the result is "
+                                     f"'{r.get('status') or run.status}' and only proven fixes are opened automatically"})
                 with lock:
                     it["status"] = r.get("status") or run.status
                     batch.save(self.runs)
@@ -460,7 +474,9 @@ class Studio:
                 from ..repo.bootstrap import bootstrap
                 run.push("stage", {"name": "setup", "message": "installing the project's dependencies"})
                 for note in bootstrap(repo, log=lambda m: run.push("log", {"level": "info", "message": m})):
-                    run.push("log", {"level": "info", "message": "env: " + note})
+                    bad = "could not" in note or "FAILED" in note     # tests will not import the project: say so loudly
+                    run.push("log", {"level": "warn" if bad else "info",
+                                     "message": ("environment problem, tests may not run: " if bad else "env: ") + note})
             slug = repo_slug_from_remote(repo)
             issue = parse_issue(run.prompt, default_slug=slug)
             run.title = (f"#{run.issue_number} " if getattr(run, "issue_number", None) else "") + (issue.title[:120] or run.title)
