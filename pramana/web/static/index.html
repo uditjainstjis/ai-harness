@@ -30,6 +30,7 @@
         <span class="gh">⎇</span>
         <input id="repo" placeholder="Repository — GitHub URL, owner/name, or a folder on this computer (optional if your text has a GitHub link)">
       </div>
+      <label class="pr-check"><input type="checkbox" id="want-pr"> Open a pull request when the fix is verified <span class="muted">(you confirm first)</span></label>
       <details class="more"><summary>More options</summary>
         <label>Test command that must pass after the fix (optional)
           <input id="test" placeholder="e.g. pytest tests/test_signup.py"></label>
@@ -64,6 +65,15 @@
     <div><b id="st-tokens">0</b><span>tokens</span></div>
     <div><b id="st-steps">–</b><span>agent steps</span></div>
   </div>
+  <div class="gh-bar card">
+    <div class="gh-left"><b>GitHub</b>
+      <label class="pr-check small"><input type="checkbox" id="run-want-pr" onchange="toggleWantPr(this.checked)"> ask me to open a pull request at the end</label></div>
+    <div class="gh-actions">
+      <button class="btn" onclick="openGithub('issue')">Create issue</button>
+      <button class="btn gh-pr" onclick="openGithub('pr')">Create pull request</button>
+    </div>
+    <div id="gh-links" class="gh-links"></div>
+  </div>
   <div id="verdict" class="verdict" hidden></div>
   <div class="grid">
     <section class="card feed-card"><h3>Live activity</h3><div id="feed" class="feed"></div></section>
@@ -84,6 +94,18 @@
     <div id="diff"></div>
   </section>
 </main>
+
+<dialog id="gh-dlg" class="gh-dlg">
+  <div class="gh-dlg-head"><h3 id="gh-title-h">Create pull request</h3><button class="icon-btn" onclick="$('#gh-dlg').close()">✕</button></div>
+  <div id="gh-body-wrap">
+    <div id="gh-where" class="gh-where"></div>
+    <label>Title <input id="gh-title"></label>
+    <label>Description <textarea id="gh-desc" rows="12"></textarea></label>
+    <div class="gh-foot"><span id="gh-status" class="small"></span>
+      <button class="btn" onclick="$('#gh-dlg').close()">Not now</button>
+      <button class="primary" id="gh-go" onclick="submitGithub()">Create on GitHub</button></div>
+  </div>
+</dialog>
 
 <div id="drawer" class="drawer" hidden>
   <div class="drawer-panel card">

@@ -129,7 +129,7 @@ async function startRun() {
   const btn = $("#go-btn");
   btn.disabled = true;
   try {
-    const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value });
+    const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value, want_pr: $("#want-pr").checked });
     go("run", r.id);
   } catch (e) {
     $("#form-error").textContent = e.message;
@@ -151,7 +151,10 @@ async function loadRecent() {
     $("#recent-wrap").hidden = !runs.length;
     $("#recent").innerHTML = runs.map((r) => {
       const st = pillOf(r.verdict || r.status);
-      return `<div class="card recent-item" onclick="go('run','${r.id}')"><div><b>${esc(r.title)}</b><div class="muted small">${esc(r.repo)}</div></div>
+      const when = new Date(r.created * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const mdl = r.model && r.model.model ? ` · ${esc(r.model.model)}` : "";
+      const gh = (r.github || []).filter((g) => g.url).map((g) => ` · <a href="${esc(g.url)}" target="_blank" onclick="event.stopPropagation()">${g.kind === "pr" ? "PR" : "issue"}</a>`).join("");
+      return `<div class="card recent-item" onclick="go('run','${r.id}')"><div><b>${esc(r.title)}</b><div class="muted small">${esc(r.repo)} · ${when}${mdl}${gh}</div></div>
         <span class="status-pill ${st.cls}">${st.label}</span></div>`;
     }).join("");
   } catch (e) {}
@@ -203,9 +206,14 @@ async function openRun(id) {
   $("#stepper").innerHTML = STEPS.map((s) => `<li>${s[1]}</li>`).join("");
   ["#st-calls", "#st-tokens"].forEach((s) => ($(s).textContent = "0")); $("#st-steps").textContent = "–";
   const info = await api("/api/runs/" + id);
+  cur.replay = info.status === "done" || info.status === "error" || info.status === "interrupted";
   $("#run-title").textContent = info.title;
   $("#run-repo").textContent = info.repo;
-  $("#run-model").textContent = modelInfo ? `${PRETTY[modelInfo.provider] || modelInfo.provider} API · ${modelInfo.model}` : "";
+  $("#run-want-pr").checked = !!info.want_pr;
+  cur.wantPr = !!info.want_pr;
+  renderGhLinks(info.github || []);
+  const rm = info.model && info.model.model ? info.model : modelInfo;   // the model this run used, not today's setting
+  $("#run-model").textContent = rm ? `${PRETTY[rm.provider] || rm.provider} API · ${rm.model}` : "";
   cur.start = info.created * 1000;
   setStatus("running", "Starting");
   stepTo("setup");
@@ -213,6 +221,7 @@ async function openRun(id) {
   es = new EventSource(`/api/runs/${id}/events?since=0`);
   es.onmessage = (m) => handle(JSON.parse(m.data));
   es.onerror = () => { if (cur.done) stopStream(); };
+  if (info.status === "interrupted") setStatus("error", "Interrupted (the app closed mid-run)");
 }
 function handle(e) {
   const k = e.kind, t = e.t;
@@ -287,6 +296,7 @@ function handle(e) {
       break;
     case "nudge": line("⚑", esc(e.message || "").slice(0, 220), "note", t); break;
     case "log": if (e.level !== "debug") line(e.level === "error" ? "✖" : e.level === "warn" ? "!" : "·", esc(e.message || "").slice(0, 240), e.level === "error" ? "bad" : e.level === "warn" ? "note" : "thought", t); break;
+    case "github": renderGhLinks([...(cur.gh || []), e]); break;
     case "done": finish(); break;
   }
 }
@@ -294,6 +304,7 @@ async function finish() {
   cur.done = true;
   stopStream();
   const info = await api("/api/runs/" + cur.id);
+  if (info.status === "interrupted") { setStatus("error", "Interrupted"); return; }
   const r = info.result || {};
   stepTo("done");
   const p = pillOf(r.status);
@@ -312,6 +323,9 @@ async function finish() {
   v.innerHTML = `<div class="big">${head[0]}</div><div><h3>${head[1]}</h3><p class="detail">${esc(r.summary || head[2])}${r.error ? `<br><code>${esc(r.error)}</code>` : ""}</p>
     <p class="detail small muted" style="margin-top:6px">${u.total_tokens ? fmtTok(u.total_tokens) + " tokens · " + (u.calls || 0) + " model calls · " : ""}${r.elapsed_s ? fmtTime(r.elapsed_s) : ""}${r.attempts ? " · " + r.attempts + " attempt(s)" : ""}</p></div>`;
   if (r.checks && r.checks.length) panel("ev-proof", checksHtml(r.checks));
+  if (cur.wantPr && (r.status === "verified" || r.status === "patched") && !(info.github || []).some((g) => g.kind === "pr" && g.url) && !cur.replay) {
+    setTimeout(() => openGithub("pr", true), 600);   // asked at the end, as requested before/while the run went
+  }
   if (r.patch) {
     $("#diff-card").hidden = false;
     $("#diff").innerHTML = renderDiff(r.patch);
@@ -332,6 +346,44 @@ function renderDiff(patch) {
     return `<div class="dfile"><div class="dfile-name">${esc(name)}</div><div class="dlines">${body}</div></div>`;
   }).join("");
 }
+/* ---------------- GitHub: pull request / issue ---------------- */
+let ghKind = "pr", ghPreview = null;
+function renderGhLinks(list) {
+  cur.gh = list;
+  $("#gh-links").innerHTML = list.map((g) => g.url ? `✓ ${g.kind === "pr" ? "Pull request" : "Issue"} created: <a href="${esc(g.url)}" target="_blank">${esc(g.url)}</a>`
+    : `<span style="color:var(--bad)">✗ ${g.kind === "pr" ? "Pull request" : "Issue"} failed: ${esc(String(g.error || "").slice(0, 200))}</span>`).join("<br>");
+}
+async function toggleWantPr(on) { cur.wantPr = on; try { await api(`/api/runs/${cur.id}/flags`, { want_pr: on }); } catch (e) {} }
+async function openGithub(kind, askedAtEnd) {
+  ghKind = kind;
+  const dlg = $("#gh-dlg");
+  $("#gh-title-h").textContent = (askedAtEnd ? "The fix is ready — " : "") + (kind === "pr" ? "Create pull request" : "Create issue");
+  $("#gh-where").innerHTML = "Checking GitHub…"; $("#gh-title").value = ""; $("#gh-desc").value = ""; $("#gh-status").textContent = "";
+  $("#gh-go").disabled = true;
+  dlg.showModal();
+  try {
+    ghPreview = await api(`/api/runs/${cur.id}/github?kind=${kind}`);
+  } catch (e) { ghPreview = { ok: false, error: e.message }; }
+  if (!ghPreview.ok) { $("#gh-where").innerHTML = `<span style="color:var(--bad)">${esc(ghPreview.error || "Not available.")}</span>`; return; }
+  const p = ghPreview;
+  $("#gh-where").innerHTML = kind === "pr"
+    ? `Repository <b>${esc(p.repo)}</b> · into <code>${esc(p.base)}</code> from <code>${esc(p.branch)}</code><br>Push to: <b>${esc(p.push_to)}</b> · as <b>${esc(p.user)}</b><br>Files: ${(p.files || []).map((f) => `<code>${esc(f)}</code>`).join(" ")}`
+    : `Repository <b>${esc(p.repo)}</b> · as <b>${esc(p.user)}</b>`;
+  $("#gh-title").value = p.title || ""; $("#gh-desc").value = p.body || "";
+  $("#gh-go").disabled = false;
+  $("#gh-go").textContent = kind === "pr" ? "Create pull request on GitHub" : "Create issue on GitHub";
+}
+async function submitGithub() {
+  const btn = $("#gh-go"); btn.disabled = true;
+  $("#gh-status").textContent = ghKind === "pr" ? "Creating the branch, pushing, opening the pull request…" : "Creating the issue…";
+  try {
+    const r = await api(`/api/runs/${cur.id}/github`, { kind: ghKind, title: $("#gh-title").value, body: $("#gh-desc").value,
+      branch: ghPreview && ghPreview.branch, files: ghPreview && ghPreview.files });
+    if (r.ok) { $("#gh-status").innerHTML = `✓ Created: <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a>`; }
+    else { $("#gh-status").innerHTML = `<span style="color:var(--bad)">✗ ${esc(String(r.error || "failed").slice(0, 300))}</span>`; btn.disabled = false; }
+  } catch (e) { $("#gh-status").innerHTML = `<span style="color:var(--bad)">✗ ${esc(e.message)}</span>`; btn.disabled = false; }
+}
+
 function copyPath() { if (cur && cur.repoPath) navigator.clipboard.writeText(cur.repoPath); }
 
 /* ---------------- boot ---------------- */

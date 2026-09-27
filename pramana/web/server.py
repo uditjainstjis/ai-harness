@@ -73,8 +73,13 @@ def interpret(prompt: str, repo: str) -> Dict[str, str]:
 
 
 class Run:
-    def __init__(self, prompt: str, repo: str, test: str) -> None:
-        self.id = time.strftime("%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    """One task. Everything is written to disk as it happens (history survives restarts and crashes):
+    input.json, events.jsonl (every live event), result.json, github.json, plus Pramana's own evidence
+    bundle (trajectory, transcripts, report), which result.json points to."""
+
+    def __init__(self, prompt: str, repo: str, test: str, home: Optional[Path] = None, want_pr: bool = False,
+                 run_id: str = "") -> None:
+        self.id = run_id or time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
         self.prompt, self.repo_spec, self.test = prompt, repo, test
         self.status = "starting"
         self.events: List[Dict[str, Any]] = []
@@ -82,17 +87,53 @@ class Run:
         self.result: Optional[Dict[str, Any]] = None
         self.created = time.time()
         self.title = (prompt.strip().splitlines() or ["task"])[0][:120]
+        self.want_pr = want_pr
+        self.github: List[Dict[str, Any]] = []
+        self.model: Dict[str, Any] = {}
+        self.dir = (home / self.id) if home else None
+        self._loaded = True
 
     def push(self, kind: str, data: Dict[str, Any]) -> None:
         with self.cond:
-            self.events.append({"seq": len(self.events), "kind": kind, **_plain(data)})
+            ev = {"seq": len(self.events), "kind": kind, **_plain(data)}
+            self.events.append(ev)
+            if self.dir:
+                with open(self.dir / "events.jsonl", "a") as fh:
+                    fh.write(json.dumps(ev) + "\n")
             self.cond.notify_all()
+
+    def save(self, name: str, obj: Any) -> None:
+        if self.dir:
+            (self.dir / name).write_text(json.dumps(obj, indent=1, default=str))
+
+    def load_events(self) -> None:
+        if not self._loaded and self.dir and (self.dir / "events.jsonl").exists():
+            with self.cond:
+                self.events = [json.loads(l) for l in open(self.dir / "events.jsonl") if l.strip()]
+                self._loaded = True
+
+    @classmethod
+    def from_disk(cls, d: Path) -> Optional["Run"]:
+        try:
+            inp = json.loads((d / "input.json").read_text())
+        except (OSError, ValueError):
+            return None
+        run = cls(inp.get("prompt", ""), inp.get("repo", ""), inp.get("test", ""), d.parent, inp.get("want_pr", False), d.name)
+        run.created, run.title, run.model = inp.get("created", run.created), inp.get("title") or run.title, inp.get("model") or {}
+        res = d / "result.json"
+        run.result = json.loads(res.read_text()) if res.exists() else None
+        run.status = "done" if run.result and run.result.get("status") != "error" else ("error" if run.result else "interrupted")
+        gh = d / "github.json"
+        run.github = json.loads(gh.read_text()) if gh.exists() else []
+        run._loaded = False
+        return run
 
     def summary(self) -> Dict[str, Any]:
         r = self.result or {}
         return {"id": self.id, "title": self.title, "repo": self.repo_spec, "status": self.status,
                 "created": self.created, "verdict": r.get("status"), "elapsed_s": r.get("elapsed_s"),
-                "tokens": (r.get("usage") or {}).get("total_tokens")}
+                "tokens": (r.get("usage") or {}).get("total_tokens"), "want_pr": self.want_pr,
+                "github": self.github, "model": self.model, "history_dir": str(self.dir or "")}
 
 
 class Studio:
@@ -102,6 +143,14 @@ class Studio:
         self.lock = threading.Lock()
         self.session_model: Dict[str, str] = {}   # set from the settings panel; never written to disk
         self._models_cache: Dict[Any, Any] = {}
+        try:
+            self.home = Path(load_config(self.overrides).runs_dir) / "studio"
+        except Exception:  # noqa: BLE001
+            self.home = ROOT / "runs" / "studio"
+        self.home.mkdir(parents=True, exist_ok=True)
+        for d in sorted(self.home.iterdir()):
+            if d.is_dir() and (run := Run.from_disk(d)):
+                self.runs[run.id] = run
 
     # ------------------------------------------------------------------ model settings
     def config(self) -> Config:
@@ -170,13 +219,19 @@ class Studio:
         return self.model_info()
 
     # ------------------------------------------------------------------ runs
-    def start(self, prompt: str, repo: str, test: str) -> Run:
+    def start(self, prompt: str, repo: str, test: str, want_pr: bool = False) -> Run:
         it = interpret(prompt, repo)
         if not it["prompt"]:
             raise ValueError("Tell Pramana what to do: describe the bug or feature, or paste a GitHub issue link.")
         if not it["repo"]:
             raise ValueError("Which repository? Paste a GitHub URL (or owner/name) or a local folder path.")
-        run = Run(it["prompt"], it["repo"], test)
+        run = Run(it["prompt"], it["repo"], test, self.home, want_pr)
+        run.dir.mkdir(parents=True, exist_ok=True)
+        info = self.model_info()
+        run.model = {k: info.get(k) for k in ("provider", "model", "base_url", "key_source")}
+        run.save("input.json", {"id": run.id, "created": run.created, "prompt": run.prompt, "repo": run.repo_spec,
+                                "raw_prompt": prompt, "raw_repo": repo, "test": test, "want_pr": want_pr,
+                                "title": run.title, "model": run.model})
         with self.lock:
             self.runs[run.id] = run
         threading.Thread(target=self._work, args=(run,), daemon=True).start()
@@ -212,14 +267,53 @@ class Studio:
                 "strength": res.verification.strength if res.verification else "none",
             }
             run.status = "done"
+            self._finish(run)
             run.push("done", {"status": res.status})
         except SystemExit as e:
             run.status, run.result = "error", {"status": "error", "error": str(e)}
+            self._finish(run)
             run.push("done", {"status": "error", "error": str(e)})
         except Exception as e:  # noqa: BLE001 - the app shows the problem instead of dying
             msg = f"{type(e).__name__}: {e}"
-            run.status, run.result = "error", {"status": "error", "error": msg[:800], "trace": traceback.format_exc()[-2000:]}
+            run.status, run.result = "error", {"status": "error", "error": msg[:800], "trace": traceback.format_exc()[-4000:]}
+            self._finish(run)
             run.push("done", {"status": "error", "error": msg[:800]})
+
+    def _finish(self, run: Run) -> None:
+        """result.json in the run folder + one line in the history index."""
+        run.save("result.json", run.result)
+        r = run.result or {}
+        line = {"id": run.id, "at": time.strftime("%Y-%m-%d %H:%M:%S"), "title": run.title, "repo": run.repo_spec,
+                "prompt": run.prompt[:500], "model": run.model, "status": r.get("status"), "elapsed_s": r.get("elapsed_s"),
+                "tokens": (r.get("usage") or {}).get("total_tokens"), "calls": (r.get("usage") or {}).get("calls"),
+                "evidence": r.get("run_dir"), "error": (r.get("error") or "")[:300]}
+        with open(self.home / "index.jsonl", "a") as fh:
+            fh.write(json.dumps(line) + "\n")
+
+    # ------------------------------------------------------------------ GitHub
+    def github_preview(self, run: Run, kind: str) -> Dict[str, Any]:
+        from . import github
+        r = run.result or {}
+        return github.preview(kind, r.get("repo") or self._repo_path(run), r, run.prompt, run.title)
+
+    def github_create(self, run: Run, body: Dict[str, Any]) -> Dict[str, Any]:
+        from . import github
+        kind = body.get("kind", "pr")
+        r = run.result or {}
+        out = github.create(kind, r.get("repo") or self._repo_path(run), body.get("title") or run.title,
+                            body.get("body") or "", body.get("branch") or "", body.get("files") or [])
+        rec = {"kind": kind, "at": time.strftime("%Y-%m-%d %H:%M:%S"), **out}
+        run.github.append(rec)
+        run.save("github.json", run.github)
+        run.push("github", rec)
+        return out
+
+    @staticmethod
+    def _repo_path(run: Run) -> str:
+        for ev in reversed(run.events):
+            if ev.get("kind") == "stage" and ev.get("repo"):
+                return ev["repo"]
+        return ""
 
     def demos(self) -> List[Dict[str, str]]:
         out = []
@@ -240,7 +334,7 @@ class Studio:
                    GIT_COMMITTER_NAME="demo", GIT_COMMITTER_EMAIL="demo@localhost")
         for cmd in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "initial"]):
             subprocess.run(cmd, cwd=dest, env=env, capture_output=True)
-        return self.start((src / "issue.md").read_text(), str(dest), "")
+        return self.start((src / "issue.md").read_text(), str(dest), "", want_pr=False)
 
 
 def make_handler(studio: Studio):
@@ -289,13 +383,16 @@ def make_handler(studio: Studio):
                 return self._json(studio.demos())
             if p == "/api/runs":
                 return self._json([r.summary() for r in sorted(studio.runs.values(), key=lambda r: -r.created)])
-            m = re.fullmatch(r"/api/runs/([\w-]+)(/events|/patch|/report)?", p)
+            m = re.fullmatch(r"/api/runs/([\w-]+)(/events|/patch|/report|/github)?", p)
             if m:
                 run = studio.runs.get(m.group(1))
                 if not run:
                     return self._json({"error": "no such run"}, 404)
                 sub = m.group(2)
+                if sub == "/github":
+                    return self._json(studio.github_preview(run, (parse_qs(u.query).get("kind") or ["pr"])[0]))
                 if sub == "/events":
+                    run.load_events()
                     return self._stream(run, int((parse_qs(u.query).get("since") or ["0"])[0]))
                 if sub == "/patch":
                     return self._send(200, ((run.result or {}).get("patch") or "").encode(), "text/x-diff",
@@ -314,8 +411,15 @@ def make_handler(studio: Studio):
             b = self._body()
             try:
                 if p == "/api/runs":
-                    run = studio.start(b.get("prompt", ""), b.get("repo", ""), b.get("test", ""))
+                    run = studio.start(b.get("prompt", ""), b.get("repo", ""), b.get("test", ""), bool(b.get("want_pr")))
                     return self._json({"id": run.id})
+                m = re.fullmatch(r"/api/runs/([\w-]+)/(github|flags)", p)
+                if m and m.group(1) in studio.runs:
+                    run = studio.runs[m.group(1)]
+                    if m.group(2) == "flags":
+                        run.want_pr = bool(b.get("want_pr"))
+                        return self._json({"want_pr": run.want_pr})
+                    return self._json(studio.github_create(run, b))
                 if p == "/api/demo":
                     return self._json({"id": studio.start_demo(b.get("id", "")).id})
                 if p == "/api/model":
@@ -336,7 +440,7 @@ def make_handler(studio: Studio):
             try:
                 while True:
                     with run.cond:
-                        while i >= len(run.events) and run.status not in ("done", "error"):
+                        while i >= len(run.events) and run.status not in ("done", "error", "interrupted"):
                             run.cond.wait(timeout=15)
                             if i >= len(run.events):
                                 break
@@ -348,7 +452,7 @@ def make_handler(studio: Studio):
                     else:
                         self.wfile.write(b": keep-alive\n\n")
                     self.wfile.flush()
-                    if run.status in ("done", "error") and i >= len(run.events):
+                    if run.status in ("done", "error", "interrupted") and i >= len(run.events):
                         return
             except (BrokenPipeError, ConnectionResetError):
                 return

@@ -184,3 +184,26 @@ button, .btn { font: inherit; cursor: pointer; }
 @media (max-width: 700px) { .composer-foot { flex-direction: column; align-items: stretch; } .go-group { justify-content: space-between; } }
 .api-line { margin-top: 10px; font-size: 13px; color: var(--muted); }
 .api-line b { color: var(--ink); font-weight: 600; }
+
+.pr-check { display: flex; gap: 7px; align-items: center; font-size: 13.5px; margin-top: 10px; cursor: pointer; }
+.pr-check input { accent-color: var(--accent2); width: 15px; height: 15px; }
+.gh-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 14px; margin-bottom: 14px; }
+.gh-left { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.gh-left .pr-check { margin-top: 0; }
+.gh-actions { display: flex; gap: 8px; }
+.gh-pr { border-color: var(--accent2); color: var(--accent2); }
+.gh-links { width: 100%; font-size: 13px; }
+.gh-links:empty { display: none; }
+.gh-links a { color: var(--accent2); font-weight: 600; }
+.gh-dlg { width: min(760px, 94vw); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: var(--card); color: var(--ink); }
+.gh-dlg::backdrop { background: rgba(0,0,0,.3); }
+.gh-dlg-head { display: flex; justify-content: space-between; align-items: center; }
+.gh-dlg-head h3 { margin: 0; }
+.gh-dlg label { display: block; font-size: 13px; color: var(--muted); margin-top: 12px; }
+.gh-dlg input, .gh-dlg textarea { width: 100%; margin-top: 5px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  border-radius: 9px; padding: 9px 12px; font: 13.5px/1.5 inherit; font-family: inherit; }
+.gh-dlg textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.gh-where { margin-top: 10px; font-size: 13.5px; background: var(--bg2); border-radius: 10px; padding: 10px 12px; }
+.gh-where code { font-size: 12px; }
+.gh-foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 14px; }
+.gh-foot #gh-status { margin-right: auto; }

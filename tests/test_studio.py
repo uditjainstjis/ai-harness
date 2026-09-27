@@ -45,3 +45,31 @@ def test_studio_serves_pages_and_refuses_unclear_input(monkeypatch):
             assert e.code == 400 and "repository" in json.load(e)["error"].lower()
     finally:
         httpd.shutdown()
+
+
+def test_every_run_is_kept_on_disk_and_reloaded(tmp_path, monkeypatch):
+    import subprocess
+    import time
+    monkeypatch.setenv("AI_PROVIDER", "mock")
+    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "proj"
+    (repo / "pkg").mkdir(parents=True)
+    (repo / "pkg" / "m.py").write_text("def f():\n    return 1\n")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"], cwd=repo, check=True)
+    paths = {"runs_dir": str(tmp_path / "runs"), "workspace_dir": str(tmp_path / "ws")}
+    studio = Studio({"paths": paths, "agent": {"max_steps": 3, "max_attempts": 1}})
+    assert str(studio.home).startswith(str(tmp_path))
+    run = studio.start("f() should return 2", str(repo), "")
+    for _ in range(300):
+        if run.status in ("done", "error"):
+            break
+        time.sleep(0.1)
+    d = studio.home / run.id
+    assert (d / "input.json").exists() and (d / "result.json").exists()
+    assert sum(1 for _ in open(d / "events.jsonl")) >= 2
+    assert json.loads((d / "input.json").read_text())["prompt"] == "f() should return 2"
+    assert run.id in (studio.home / "index.jsonl").read_text()
+    again = Studio({"paths": paths})       # a restart
+    assert run.id in again.runs and again.runs[run.id].result is not None

@@ -238,6 +238,9 @@ def load_config(overrides: Optional[Dict[str, Any]] = None) -> Config:
     if overrides:
         _apply(cfg.model, overrides.get("model", {}))
         _apply(cfg.agent, overrides.get("agent", {}))
+        for k in ("runs_dir", "workspace_dir"):
+            if overrides.get("paths", {}).get(k):
+                setattr(cfg, k, str(overrides["paths"][k]))
 
     cfg.api_key = (env.get("AI_API_KEY") or "").strip()
     resolve_provider(cfg)
