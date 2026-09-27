@@ -31,6 +31,7 @@
         <input id="repo" placeholder="Repository — GitHub URL, owner/name, or a folder on this computer (optional if your text has a GitHub link)">
       </div>
       <label class="pr-check"><input type="checkbox" id="want-pr"> Open a pull request when the fix is verified <span class="muted">(you confirm first)</span></label>
+      <label class="pr-check"><input type="checkbox" id="auto-pr"> …or open it <b>automatically</b>, no questions</label>
       <details class="more"><summary>More options</summary>
         <label>Test command that must pass after the fix (optional)
           <input id="test" placeholder="e.g. pytest tests/test_signup.py"></label>
@@ -62,6 +63,7 @@
       <div id="pick-list"></div>
     </div>
     <label class="pr-check"><input type="checkbox" id="pick-pr"> Ask me to open a pull request for each verified fix, one by one</label>
+    <label class="pr-check"><input type="checkbox" id="pick-auto"> Open every pull request <b>automatically</b> the moment its fix is verified (no questions)</label>
     <div class="pick-foot">
       <button class="link" onclick="useAsText()">No — just use my text as the task</button>
       <button class="primary" id="pick-go" onclick="startBatch()">Fix selected issues</button>
@@ -74,7 +76,8 @@
   <div class="run-head">
     <button class="link" onclick="go('home')">← New task</button>
     <div class="run-title"><h2 id="batch-title">…</h2><div class="run-meta"><span class="chip" id="batch-progress"></span><span class="chip" id="batch-model"></span></div></div>
-    <div id="batch-status" class="status-pill running"><span class="spin"></span>Working</div>
+    <div class="head-right"><button class="btn stop-btn" id="batch-stop" onclick="stopBatch()">Stop all</button>
+      <div id="batch-status" class="status-pill running"><span class="spin"></span>Working</div></div>
   </div>
   <div class="card batch-card"><table class="batch-table"><thead><tr><th>Issue</th><th>Status</th><th class="num">Time</th><th class="num">Tokens</th><th>Pull request</th></tr></thead><tbody id="batch-rows"></tbody></table></div>
   <p class="note small muted">Each issue starts from the original code and is proven on its own; a proven fix is committed to its own branch <code>pramana/issue-N</code>, so every pull request contains exactly one fix.</p>
@@ -84,9 +87,11 @@
   <div class="run-head">
     <button class="link" id="run-back" onclick="runBack()">← New task</button>
     <div class="run-title"><h2 id="run-title">…</h2><div class="run-meta"><span class="chip" id="run-repo"></span><span class="chip" id="run-model"></span></div></div>
-    <div id="run-status" class="status-pill running"><span class="spin"></span>Starting</div>
+    <div class="head-right"><button class="btn stop-btn" id="stop-btn" onclick="stopRun()">Stop</button>
+      <div id="run-status" class="status-pill running"><span class="spin"></span>Starting</div></div>
   </div>
   <ol class="stepper" id="stepper"></ol>
+  <div id="wait-line" class="wait-line" hidden></div>
   <div class="stats">
     <div><b id="st-time">0s</b><span>elapsed</span></div>
     <div><b id="st-calls">0</b><span>model calls</span></div>

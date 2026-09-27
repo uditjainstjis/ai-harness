@@ -132,7 +132,7 @@ async function startRun() {
   const btn = $("#go-btn");
   btn.disabled = true;
   try {
-    const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value, want_pr: $("#want-pr").checked });
+    const r = await api("/api/runs", { prompt: $("#prompt").value, repo: $("#repo").value, test: $("#test").value, want_pr: $("#want-pr").checked, auto_pr: $("#auto-pr").checked });
     if (r.select_issues) { showPicker(r); return; }
     go("run", r.id);
   } catch (e) {
@@ -173,6 +173,7 @@ function pillOf(s) {
   if (s === "verified") return { cls: "verified", label: "Verified fix" };
   if (s === "patched") return { cls: "patched", label: "Patched · unproven" };
   if (s === "no_patch" || s === "error") return { cls: "failed", label: s === "error" ? "Error" : "No fix" };
+  if (s === "cancelled" || s === "stopped") return { cls: "failed", label: "Stopped" };
   return { cls: "running", label: "Working" };
 }
 function setStatus(s, label) {
@@ -205,6 +206,7 @@ function checksHtml(checks) {
 async function openRun(id) {
   stopStream();
   cur = { id, step: 0, calls: 0, tokens: 0, start: Date.now(), done: false };
+  $("#stop-btn").hidden = false; $("#stop-btn").disabled = false; $("#wait-line").hidden = true;
   $("#feed").innerHTML = ""; $("#verdict").hidden = true; $("#diff-card").hidden = true;
   document.querySelectorAll(".ev").forEach((e) => (e.hidden = true));
   $("#stepper").innerHTML = STEPS.map((s) => `<li>${s[1]}</li>`).join("");
@@ -231,7 +233,12 @@ async function openRun(id) {
 }
 function handle(e) {
   const k = e.kind, t = e.t;
+  if (k !== "wait" && (k === "llm" || k === "tool_call" || k === "done")) $("#wait-line").hidden = true;
   switch (k) {
+    case "wait":
+      $("#wait-line").hidden = false;
+      $("#wait-line").textContent = `⏳ Waiting for ${e.model}: ${e.seconds}s for this reply` + (e.seconds >= 45 ? " — the endpoint is slow; press Stop and pick another model if this keeps growing" : "");
+      break;
     case "stage":
       if (e.name === "ready") { if (e.title) $("#run-title").textContent = e.title; line("✓", esc(e.message), "good"); }
       else { setStatus("running", "Preparing"); line("⚙", esc(e.message), "note"); }
@@ -309,8 +316,11 @@ function handle(e) {
     case "done": finish(); break;
   }
 }
+async function stopRun() { if (!cur) return; $("#stop-btn").disabled = true; try { await api(`/api/runs/${cur.id}/stop`, {}); } catch (e) {} }
+async function stopBatch() { if (!lastBatch) return; $("#batch-stop").disabled = true; try { await api(`/api/batches/${lastBatch}/stop`, {}); } catch (e) {} }
 async function finish() {
   cur.done = true;
+  $("#stop-btn").hidden = true; $("#wait-line").hidden = true;
   stopStream();
   const info = await api("/api/runs/" + cur.id);
   if (info.status === "interrupted") { setStatus("error", "Interrupted"); return; }
@@ -361,6 +371,7 @@ function showPicker(r) {
   ["home", "run", "batch"].forEach((v) => ($("#" + v).hidden = true)); $("#pick").hidden = false;
   $("#pick-repo").textContent = r.repo;
   $("#pick-pr").checked = $("#want-pr").checked;
+  $("#pick-auto").checked = $("#auto-pr").checked;
   const pre = new Set(r.preselect || []);
   $("#pick-list").innerHTML = r.issues.length ? r.issues.map((i) => `<label class="pick-row"><input type="checkbox" value="${i.number}" ${pre.has(i.number) ? "checked" : ""}>
       <span class="num">#${i.number}</span><span><span class="ttl">${esc(i.title)}</span>${(i.labels || []).map((l) => `<span class="lbl ${esc(l)}">${esc(l)}</span>`).join("")}
@@ -376,10 +387,10 @@ async function useAsText() {
 }
 async function startBatch() {
   const nums = [...document.querySelectorAll("#pick-list input:checked")].map((c) => +c.value).sort((a, b) => a - b);
-  try { const r = await api("/api/batch", { repo: pickState.repo, numbers: nums, want_pr: $("#pick-pr").checked }); go("batch", r.id); }
+  try { const r = await api("/api/batch", { repo: pickState.repo, numbers: nums, want_pr: $("#pick-pr").checked && !$("#pick-auto").checked, auto_pr: $("#pick-auto").checked }); go("batch", r.id); }
   catch (e) { $("#pick-error").textContent = e.message; }
 }
-const DONE = new Set(["verified", "patched", "no_patch", "error", "interrupted"]);
+const DONE = new Set(["verified", "patched", "no_patch", "error", "interrupted", "cancelled"]);
 let walkQueue = null;
 async function openBatch(id) {
   lastBatch = id;
@@ -388,19 +399,21 @@ async function openBatch(id) {
     try { b = await api("/api/batches/" + id); } catch (e) { return; }
     $("#batch-title").textContent = `Fixing ${b.items.length} issue${b.items.length > 1 ? "s" : ""} in ${b.repo}`;
     const done = b.items.filter((x) => DONE.has(x.status)).length;
-    $("#batch-progress").textContent = `${done} / ${b.items.length} done · ${b.items.filter((x) => x.status === "verified").length} verified`;
+    $("#batch-progress").textContent = `${done} / ${b.items.length} done · ${b.items.filter((x) => x.status === "verified").length} verified · ${b.running_now || 0} running in parallel` + (b.auto_pr ? " · PRs open automatically" : "");
     $("#batch-model").textContent = modelInfo ? `${PRETTY[modelInfo.provider] || modelInfo.provider} API · ${modelInfo.model}` : "";
-    const finished = b.status === "done" || String(b.status).startsWith("error");
+    const finished = b.status === "done" || b.status === "stopped" || String(b.status).startsWith("error");
+    $("#batch-stop").hidden = finished;
     const el = $("#batch-status");
     el.className = "status-pill " + (finished ? (String(b.status).startsWith("error") ? "failed" : "verified") : "running");
     el.innerHTML = finished ? (String(b.status).startsWith("error") ? esc(b.status) : "All done") : '<span class="spin"></span>Working';
     $("#batch-rows").innerHTML = b.items.map((x) => {
       const p = pillOf(DONE.has(x.status) ? x.status : "running");
-      const lbl = x.status === "queued" ? "Queued" : DONE.has(x.status) ? p.label : "Working…";
+      const lbl = x.status === "queued" ? "Queued" : DONE.has(x.status) ? p.label : (x.phase ? x.phase.charAt(0).toUpperCase() + x.phase.slice(1) + "…" : "Working…");
       const pr = (x.github || []).find((g) => g.kind === "pr" && g.url);
       const prCell = pr ? `<a href="${esc(pr.url)}" target="_blank" onclick="event.stopPropagation()">open PR ↗</a>`
         : (x.branch ? `<button class="btn" onclick="event.stopPropagation();openGithub('pr',false,'${x.run_id}')">Create PR</button>` : '<span class="muted">–</span>');
-      return `<tr class="${x.run_id ? "clickable" : ""}" onclick="${x.run_id ? `go('run','${x.run_id}')` : ""}"><td><b>#${x.number}</b> ${esc(x.title)}</td>
+      const live = !DONE.has(x.status) && x.status !== "queued" && x.now ? `<div class="now">↳ ${esc(x.now)}${x.calls ? ` · ${x.calls} model calls` : ""}</div>` : "";
+      return `<tr class="${x.run_id ? "clickable" : ""}" onclick="${x.run_id ? `go('run','${x.run_id}')` : ""}"><td><b>#${x.number}</b> ${esc(x.title)}${live}</td>
         <td><span class="status-pill ${x.status === "queued" ? "" : p.cls}">${esc(lbl)}</span></td><td class="num">${x.elapsed_s ? fmtTime(x.elapsed_s) : ""}</td>
         <td class="num">${x.tokens ? fmtTok(x.tokens) : ""}</td><td>${prCell}</td></tr>`;
     }).join("");
@@ -414,7 +427,7 @@ async function openBatch(id) {
   };
   walkQueue = null;
   await tick();
-  batchTimer = setInterval(tick, 2500);
+  batchTimer = setInterval(tick, 1500);
 }
 function nextWalk() { if (walkQueue && walkQueue.length) openGithub("pr", true, walkQueue.shift()); }
 function runBack() { if (cur && cur.batchId) go("batch", cur.batchId); else go("home"); }

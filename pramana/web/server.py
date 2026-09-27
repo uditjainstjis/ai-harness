@@ -117,8 +117,31 @@ class Run:
         self.model: Dict[str, Any] = {}
         self.dir = (home / self.id) if home else None
         self._loaded = True
+        self.now, self.phase, self.calls, self.auto_pr = "", "", 0, False
+
+    def _track(self, kind: str, d: Dict[str, Any]) -> None:
+        """One human line for 'what is it doing right now' (shown live in the batch view)."""
+        if kind == "phase":
+            self.phase = d.get("name", self.phase)
+        elif kind == "tool_call":
+            self.now = f"{d.get('name', '')} {str(d.get('brief', ''))[:90]}".strip()
+        elif kind == "wait":
+            self.now = f"waiting for the model · {d.get('seconds')}s"
+        elif kind == "llm":
+            self.calls += 1
+        elif kind == "verify":
+            self.now = f"proof gate: {'accepted' if d.get('accepted') else 'not yet'} ({d.get('strength')})"
+        elif kind == "triage":
+            self.now = f"triage: {d.get('size')} → {d.get('plan')}"
+        elif kind == "log" and ("fast path" in str(d.get("message")) or "busy" in str(d.get("message"))):
+            self.now = str(d.get("message"))[:110]
+        elif kind == "stage":
+            self.now = str(d.get("message"))[:110]
+        elif kind == "done":
+            self.now = ""
 
     def push(self, kind: str, data: Dict[str, Any]) -> None:
+        self._track(kind, data)
         with self.cond:
             ev = {"seq": len(self.events), "kind": kind, **_plain(data)}
             self.events.append(ev)
@@ -160,14 +183,16 @@ class Run:
                 "created": self.created, "verdict": r.get("status"), "elapsed_s": r.get("elapsed_s"),
                 "tokens": (r.get("usage") or {}).get("total_tokens"), "want_pr": self.want_pr,
                 "github": self.github, "model": self.model, "history_dir": str(self.dir or ""),
-                "batch_id": getattr(self, "batch_id", ""), "issue": getattr(self, "issue_number", None)}
+                "batch_id": getattr(self, "batch_id", ""), "issue": getattr(self, "issue_number", None),
+                "now": self.now, "phase": self.phase, "calls": self.calls}
 
 
 class Batch:
     """Several GitHub issues, fixed one at a time. Each starts from the untouched base commit, is proven on
     its own, and a proven fix is committed to its own branch (pramana/issue-N): one pull request per issue."""
 
-    def __init__(self, slug: str, numbers: List[int], want_pr: bool, home: Path, titles: Dict[int, str]) -> None:
+    def __init__(self, slug: str, numbers: List[int], want_pr: bool, home: Path, titles: Dict[int, str], auto_pr: bool = False) -> None:
+        self.auto_pr = auto_pr
         self.id = "b" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
         self.slug, self.numbers, self.want_pr, self.titles = slug, numbers, want_pr, titles
         self.items: List[Dict[str, Any]] = [{"number": n, "title": titles.get(n, ""), "run_id": "", "status": "queued"} for n in numbers]
@@ -182,8 +207,11 @@ class Batch:
             r = (run.result or {}) if run else {}
             items.append({**it, "status": (r.get("status") or run.status) if run else it["status"],
                           "tokens": (r.get("usage") or {}).get("total_tokens"), "elapsed_s": r.get("elapsed_s"),
-                          "branch": r.get("branch", ""), "github": run.github if run else []})
+                          "branch": r.get("branch", ""), "github": run.github if run else [],
+                          "now": run.now if run else "", "phase": run.phase if run else "", "calls": run.calls if run else 0,
+                          "started": run.created if run else None})
         return {"id": self.id, "repo": self.slug, "status": self.status, "created": self.created, "want_pr": self.want_pr,
+                "auto_pr": self.auto_pr, "running_now": sum(1 for x in items if x["status"] in ("running", "starting", "preparing")),
                 "repo_path": self.repo_path, "items": items}
 
     def save(self, runs: Dict[str, "Run"]) -> None:
@@ -303,7 +331,7 @@ class Studio:
         pre = intent if isinstance(intent, list) else [i["number"] for i in issues]
         return {"select_issues": True, "repo": slug, "issues": issues, "preselect": pre}
 
-    def start_batch(self, slug: str, numbers: List[int], want_pr: bool) -> Batch:
+    def start_batch(self, slug: str, numbers: List[int], want_pr: bool, auto_pr: bool = False) -> Batch:
         from ..repo.issue import list_github_issues
         if not numbers:
             raise ValueError("Pick at least one issue.")
@@ -311,7 +339,7 @@ class Studio:
             titles = {i["number"]: i["title"] for i in list_github_issues(slug)}
         except Exception:  # noqa: BLE001
             titles = {}
-        batch = Batch(slug, numbers, want_pr, self.home, titles)
+        batch = Batch(slug, numbers, want_pr, self.home, titles, auto_pr)
         self.batches[batch.id] = batch
         threading.Thread(target=self._batch_work, args=(batch,), daemon=True).start()
         return batch
@@ -337,6 +365,9 @@ class Studio:
 
             def one(it: Dict[str, Any]) -> None:
                 n = it["number"]
+                if getattr(batch, "cancelled", False):
+                    it["status"] = "cancelled"
+                    return
                 dest = workspace / f"{main.name}-issue-{n}-{batch.id[-4:]}"
                 if dest.exists():
                     shutil.rmtree(dest, ignore_errors=True)
@@ -361,26 +392,34 @@ class Studio:
                     _git(dest, *who, "commit", "-q", "-m", f"Fix #{n}: {it['title']}".strip(), "-m", f"Closes #{n}")
                     r["branch"], r["commit"], r["closes"] = branch, _git(dest, "rev-parse", "HEAD"), n
                     run.save("result.json", r)
+                    if batch.auto_pr:            # the user asked for pull requests without being asked each time
+                        self._auto_pr(run)
                 with lock:
                     it["status"] = r.get("status") or run.status
                     batch.save(self.runs)
 
             with ThreadPoolExecutor(max_workers=max(1, min(4, len(batch.items)))) as ex:
                 list(ex.map(one, batch.items))
-            batch.status = "done"
+            batch.status = "stopped" if getattr(batch, "cancelled", False) else "done"
         except Exception as e:  # noqa: BLE001
             batch.status = f"error: {type(e).__name__}: {e}"[:300]
         batch.save(self.runs)
 
-    def start(self, prompt: str, repo: str, test: str, want_pr: bool = False) -> Run:
+    def start(self, prompt: str, repo: str, test: str, want_pr: bool = False, auto_pr: bool = False) -> Run:
         it = interpret(prompt, repo)
         if not it["prompt"]:
             raise ValueError("Tell Pramana what to do: describe the bug or feature, or paste a GitHub issue link.")
         if not it["repo"]:
             raise ValueError("Which repository? Paste a GitHub URL (or owner/name) or a local folder path.")
         run = Run(it["prompt"], it["repo"], test, self.home, want_pr)
+        run.auto_pr = auto_pr
         self._register(run, raw_prompt=prompt, raw_repo=repo)
-        threading.Thread(target=self._work, args=(run,), daemon=True).start()
+
+        def go() -> None:
+            self._work(run)
+            if run.auto_pr and (run.result or {}).get("status") in ("verified", "patched") and (run.result or {}).get("patch"):
+                self._auto_pr(run)
+        threading.Thread(target=go, daemon=True).start()
         return run
 
     def _register(self, run: Run, raw_prompt: str = "", raw_repo: str = "") -> None:
@@ -413,7 +452,12 @@ class Studio:
             run.status = "running"
             events = Events()
             events.subscribe(run.push)
-            res: RunResult = Orchestrator(cfg, events).solve(repo, issue, acceptance_cmd=run.test or None)
+            from ..llm import build_model
+            model = build_model(cfg)
+            run.model_obj = model
+            if getattr(run, "cancelled", False):
+                raise SystemExit("stopped by the user")
+            res: RunResult = Orchestrator(cfg, events, model=model).solve(repo, issue, acceptance_cmd=run.test or None)
             run.result = {
                 "status": res.status, "summary": res.summary, "patch": res.patch, "error": res.error,
                 "elapsed_s": round(res.elapsed_s, 1), "usage": _plain(res.usage.as_dict() if hasattr(res.usage, "as_dict") else res.usage),
@@ -446,6 +490,35 @@ class Studio:
                 "evidence": r.get("run_dir"), "error": (r.get("error") or "")[:300]}
         with open(self.home / "index.jsonl", "a") as fh:
             fh.write(json.dumps(line) + "\n")
+
+    def _auto_pr(self, run: Run) -> None:
+        p = self.github_preview(run, "pr")
+        if p.get("ok"):
+            self.github_create(run, {"kind": "pr", "title": p["title"], "body": p["body"],
+                                     "branch": p.get("branch"), "files": p.get("files")})
+        else:
+            rec = {"kind": "pr", "ok": False, "error": p.get("error", "not available"), "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+            run.github.append(rec)
+            run.save("github.json", run.github)
+            run.push("github", rec)
+
+    # ------------------------------------------------------------------ stop
+    def stop_run(self, run: Run) -> None:
+        run.cancelled = True
+        backend = getattr(getattr(run, "model_obj", None), "backend", None)
+        if backend is not None and hasattr(backend, "cancel"):
+            backend.cancel.set()
+        run.push("log", {"level": "warn", "message": "stop requested: ending after the current operation"})
+
+    def stop_batch(self, batch: "Batch") -> None:
+        batch.cancelled = True
+        for it in batch.items:
+            run = self.runs.get(it["run_id"]) if it["run_id"] else None
+            if run is not None and run.status not in ("done", "error"):
+                self.stop_run(run)
+            elif not it["run_id"]:
+                it["status"] = "cancelled"
+        batch.save(self.runs)
 
     # ------------------------------------------------------------------ GitHub
     def github_preview(self, run: Run, kind: str) -> Dict[str, Any]:
@@ -580,16 +653,24 @@ def make_handler(studio: Studio):
                         if pick and pick.get("select_issues"):
                             return self._json(pick)
                         if pick and pick.get("single"):
-                            run = studio.start(pick["single"], pick["repo"], b.get("test", ""), bool(b.get("want_pr")))
+                            run = studio.start(pick["single"], pick["repo"], b.get("test", ""), bool(b.get("want_pr")), bool(b.get("auto_pr")))
                             return self._json({"id": run.id})
-                    run = studio.start(b.get("prompt", ""), b.get("repo", ""), b.get("test", ""), bool(b.get("want_pr")))
+                    run = studio.start(b.get("prompt", ""), b.get("repo", ""), b.get("test", ""), bool(b.get("want_pr")), bool(b.get("auto_pr")))
                     return self._json({"id": run.id})
                 if p == "/api/batch":
-                    batch = studio.start_batch(b.get("repo", ""), [int(n) for n in b.get("numbers") or []], bool(b.get("want_pr")))
+                    batch = studio.start_batch(b.get("repo", ""), [int(n) for n in b.get("numbers") or []], bool(b.get("want_pr")),
+                                               bool(b.get("auto_pr")))
                     return self._json({"id": batch.id})
-                m = re.fullmatch(r"/api/runs/([\w-]+)/(github|flags)", p)
+                m = re.fullmatch(r"/api/batches/([\w-]+)/stop", p)
+                if m and m.group(1) in studio.batches:
+                    studio.stop_batch(studio.batches[m.group(1)])
+                    return self._json({"ok": True})
+                m = re.fullmatch(r"/api/runs/([\w-]+)/(github|flags|stop)", p)
                 if m and m.group(1) in studio.runs:
                     run = studio.runs[m.group(1)]
+                    if m.group(2) == "stop":
+                        studio.stop_run(run)
+                        return self._json({"ok": True})
                     if m.group(2) == "flags":
                         run.want_pr = bool(b.get("want_pr"))
                         return self._json({"want_pr": run.want_pr})

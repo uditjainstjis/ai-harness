@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional
 
 from ..llm import ChatModel, ContextOverflow, LLMError
-from ..llm.base import ToolCall, Usage, short_error
+from ..llm.base import Cancelled, ModelUnresponsive, ToolCall, Usage, short_error
 from ..tools import ToolResult, Toolbox, canonicalize
 from . import prompts
 from .context import compact, compact_hard, estimate_tokens, shrink_initial, strip_private
@@ -171,6 +171,8 @@ class Attempt:
         for attempt in range(5):
             try:
                 return self.model.chat(strip_private(messages), tools=self.toolbox.specs(), temperature=temperature)
+            except (ModelUnresponsive, Cancelled) as e:
+                raise FatalModelError(str(e)) from e
             except ContextOverflow:
                 freed = compact_hard(messages, keep_recent=max(2, self.keep_recent // 2 - attempt))
                 if freed:

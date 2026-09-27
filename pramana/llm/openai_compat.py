@@ -22,6 +22,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .base import (
+    Cancelled,
+    ModelUnresponsive,
     ContextOverflow,
     LLMError,
     LLMResponse,
@@ -69,25 +71,31 @@ def _debug_dump(payload: Dict[str, Any]) -> None:
 
 
 class _Throttle:
-    """Process-wide, per-endpoint concurrency that adapts to rate limits (AIMD): at most `limit` requests in
-    flight, starting at 2; one more after every 10 clean replies (up to 8); halved on a 429, and everyone
-    pauses together for the back-off instead of hammering the endpoint in parallel."""
+    """Process-wide, per-endpoint concurrency that adapts to rate limits (AIMD) and serves callers in
+    arrival order (no run starves while others keep calling). Starts at 6 requests in flight; +1 after every
+    5 clean replies (up to 12); halved on a 429, and everyone pauses together for the back-off."""
 
-    def __init__(self, start: int = 2, cap: int = 8) -> None:
+    def __init__(self, start: int = 6, cap: int = 12) -> None:
+        import collections
         self.limit, self.cap, self.in_flight, self.ok, self.cool_until = start, cap, 0, 0, 0.0
+        self.queue = collections.deque()
         self.cond = threading.Condition()
 
     def acquire(self) -> None:
+        me = object()
         with self.cond:
+            self.queue.append(me)
             while True:
                 now = time.time()
                 if now < self.cool_until:
                     self.cond.wait(timeout=self.cool_until - now)
-                elif self.in_flight >= self.limit:
-                    self.cond.wait(timeout=1.0)
-                else:
+                elif self.queue[0] is me and self.in_flight < self.limit:
+                    self.queue.popleft()
                     self.in_flight += 1
+                    self.cond.notify_all()
                     return
+                else:
+                    self.cond.wait(timeout=0.5)
 
     def release(self, status: int, pause: float = 0.0) -> None:
         with self.cond:
@@ -97,7 +105,7 @@ class _Throttle:
                 self.cool_until = max(self.cool_until, time.time() + pause)
             elif 0 < status < 400:
                 self.ok += 1
-                if self.ok >= 10 and self.limit < self.cap:
+                if self.ok >= 5 and self.limit < self.cap:
                     self.limit, self.ok = self.limit + 1, 0
             self.cond.notify_all()
 
@@ -142,7 +150,10 @@ class OpenAICompatLLM:
         self.reasoning_field = ""
         self.passback_all = False
         self.text_mode_stops: List[str] = []  # set by ChatModel when it drives this backend in text mode
-        self.on_wait = None  # callback(message): tells the UI when the endpoint makes us wait
+        self.on_wait = None       # callback(message): tells the UI when the endpoint makes us wait (retries)
+        self.on_heartbeat = None  # callback(seconds): a call is in flight and has not answered yet
+        self.cancel = threading.Event()  # set by the app's Stop button
+        self.timeout_s = timeout_s
         headers = {"Content-Type": "application/json"}
         self.api_version = os.environ.get("AI_API_VERSION", "").strip()
         self.is_azure = provider == "azure" or ".azure.com" in self.base_url or "azure-api.net" in self.base_url
@@ -270,6 +281,7 @@ class OpenAICompatLLM:
             url += ("&" if "?" in url else "?") + f"api-version={self.api_version}"
         attempt = 0
         negotiations = 0
+        timeouts = 0
         while True:
             payload = self._payload(messages, tools, temperature)
             _debug_dump(payload)
@@ -279,7 +291,7 @@ class OpenAICompatLLM:
                 thr.acquire()
                 status = 0
                 try:
-                    r = self._client.post(url, json=payload)
+                    r = self._post_watched(url, payload)
                     status = r.status_code
                 finally:
                     ra = 0.0
@@ -291,6 +303,12 @@ class OpenAICompatLLM:
                     thr.release(status, pause=max(ra, 2.0 ** min(attempt + 1, 4)) if status == 429 else 0.0)
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 attempt += 1
+                if isinstance(e, httpx.TimeoutException):
+                    timeouts += 1
+                    if timeouts >= 2:
+                        raise ModelUnresponsive(
+                            f"{self.model} did not answer within {int(self.timeout_s)}s, twice. The endpoint is probably "
+                            f"overloaded (common on free tiers): pick another model in the Model menu and run again.") from e
                 if attempt > 6:
                     raise LLMError(f"network error talking to {self.base_url}: {e}") from e
                 wait = min(20, 2 ** attempt + random.random())
@@ -347,6 +365,30 @@ class OpenAICompatLLM:
                     pass
             self._tell(f"model endpoint busy (HTTP {r.status_code}{', rate limit' if r.status_code == 429 else ''}); retrying in {wait:.0f}s")
             time.sleep(wait)
+
+    def _post_watched(self, url: str, payload: Dict[str, Any]):
+        """POST on a worker thread; meanwhile report a heartbeat every 5s and honour Stop at once."""
+        import concurrent.futures as cf
+        if self.cancel.is_set():
+            raise Cancelled("stopped by the user")
+        ex = cf.ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(self._client.post, url, json=payload)
+        t0 = time.time()
+        try:
+            while True:
+                try:
+                    return fut.result(timeout=1.0)
+                except cf.TimeoutError:
+                    if self.cancel.is_set():
+                        raise Cancelled("stopped by the user")
+                    waited = int(time.time() - t0)
+                    if waited and waited % 5 == 0 and self.on_heartbeat:
+                        try:
+                            self.on_heartbeat(waited)
+                        except Exception:  # noqa: BLE001
+                            pass
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
 
     def _tell(self, msg: str) -> None:
         if self.on_wait:

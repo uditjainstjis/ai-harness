@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..llm.base import short_error
+from ..llm.base import Cancelled, ModelUnresponsive, short_error
 from ..repo.git import SCRATCH_DIRNAME
 from .verify import Verification, render_checks
 
@@ -171,6 +171,8 @@ class FastPath:
             try:
                 resp = self.model.chat(msgs, tools=None, temperature=0.0)
                 break
+            except (ModelUnresponsive, Cancelled):
+                raise                                  # no point escalating to more calls on a dead endpoint
             except Exception as e:  # noqa: BLE001 - the agent loop is the fallback
                 busy = any(k in str(e).lower() for k in ("429", "rate", "busy", "timed out", "timeout", "overloaded"))
                 if busy and tries < 2:

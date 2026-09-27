@@ -131,7 +131,7 @@ class ModelConfig:
     max_output_tokens: int = 8192
     reasoning_effort: str = ""
     tool_mode: str = "auto"  # auto | native | text
-    request_timeout_s: float = 300.0
+    request_timeout_s: float = 150.0
     context_window: int = 128000
 
 

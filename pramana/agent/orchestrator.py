@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import Config
 from ..llm import ChatModel, LLMError, build_model
-from ..llm.base import Usage
+from ..llm.base import Cancelled, ModelUnresponsive, Usage
 from ..repo.git import SCRATCH_DIRNAME, GitTracker
 from ..repo.issue import Issue
 from ..repo.localize import Localizer
@@ -182,6 +182,7 @@ class Orchestrator:
             backend = getattr(self.model, "backend", None)
             if backend is not None and hasattr(backend, "on_wait"):
                 backend.on_wait = lambda msg: ev.emit("log", level="warn", message=msg)
+                backend.on_heartbeat = lambda secs: ev.emit("wait", seconds=secs, model=self.model.name)
             result.model, result.provider = self.model.name, self.model.provider
             ev.emit("run", status="start", run_dir=str(run_dir), model=self.model.name, provider=self.model.provider,
                     issue=issue.title, repo=str(repo_path))
@@ -309,8 +310,9 @@ class Orchestrator:
                     git.reset_to_base()
                 result.status = "no_patch"
             self._tidy(root, git, run_dir, result)
-        except FatalModelError as e:
-            result.status, result.error = "error", f"model unavailable: {e}"
+        except (FatalModelError, ModelUnresponsive, Cancelled) as e:
+            stopped = isinstance(e, Cancelled) or "stopped by the user" in str(e)
+            result.status, result.error = ("cancelled", "stopped by the user") if stopped else ("error", f"model unavailable: {e}")
             ev.emit("log", level="error", message=result.error)
         except LLMError as e:
             result.status, result.error = "error", str(e)

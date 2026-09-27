@@ -22,6 +22,14 @@ class LLMError(Exception):
     """A model call failed in a way retries could not fix."""
 
 
+class ModelUnresponsive(LLMError):
+    """The endpoint did not answer in time, repeatedly: stop the run with a clear message instead of hanging."""
+
+
+class Cancelled(LLMError):
+    """The user pressed Stop."""
+
+
 class ContextOverflow(LLMError):
     """The request exceeded the model's context window; caller should compact and retry."""
 

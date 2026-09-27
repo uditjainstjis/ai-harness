@@ -34,6 +34,22 @@ def gh_user() -> Optional[str]:
     return out.strip().splitlines()[-1] if code == 0 and out.strip() else None
 
 
+def ensure_fork(slug: str) -> Tuple[bool, str]:
+    """Fork `slug` to the logged-in account (or find the existing fork) and wait until it can take a push.
+    Returns (ok, full_name_or_error)."""
+    import time as _time
+    code, out = _run(["gh", "api", "-X", "POST", f"repos/{slug}/forks", "--jq", ".full_name"], timeout=90)
+    full = out.strip().splitlines()[-1] if code == 0 and out.strip() else ""
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", full or ""):
+        return False, f"could not fork {slug}: {out[-300:]}"
+    for _ in range(45):                       # GitHub creates forks asynchronously
+        c, _o = _run(["gh", "api", f"repos/{full}", "--jq", ".full_name"], timeout=20)
+        if c == 0:
+            return True, full
+        _time.sleep(2)
+    return False, f"GitHub is still creating the fork {full}; try again in a minute"
+
+
 def changed_files(patch: str) -> List[str]:
     files = re.findall(r"^diff --git a/.* b/(.+)$", patch or "", flags=re.M)
     return [f for f in files if not f.startswith(".pramana/")]
@@ -146,9 +162,11 @@ def create(kind: str, repo_path: str, title: str, body: str, branch: str = "", f
         if can_push:
             remote = f"https://github.com/{slug}.git"
         else:
-            _run(["gh", "repo", "fork", slug, "--clone=false", "--remote=false"], timeout=120)
-            remote = f"https://github.com/{user}/{slug.split('/')[1]}.git"
-            owner = user
+            ok, fork = ensure_fork(slug)
+            if not ok:
+                return {"ok": False, "error": fork}
+            remote = f"https://github.com/{fork}.git"
+            owner = fork.split("/")[0]
         src = f"refs/heads/{branch}" if committed else "HEAD"
         push = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "-f", remote, f"{src}:refs/heads/{branch}"]
         code, out = _run(push, cwd=repo, timeout=300)

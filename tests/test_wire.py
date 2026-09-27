@@ -176,7 +176,57 @@ def test_throttle_halves_on_429_and_grows_on_success():
     t.acquire()
     t.release(429, pause=0.0)
     assert t.limit == 2                     # multiplicative decrease
-    for _ in range(10):
+    for _ in range(5):
         t.acquire()
         t.release(200)
-    assert t.limit == 3                     # additive increase after 10 clean replies
+    assert t.limit == 3                     # additive increase after 5 clean replies
+
+
+class _SlowServer:
+    """Answers after `delay` seconds (a stuck free-tier endpoint)."""
+
+    def __init__(self, delay):
+        import time as _t
+        outer = self
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.rfile.read(int(self.headers.get("content-length", 0)))
+                threading.Event().wait(outer.delay)   # not time.sleep: tests patch that away
+                data = json.dumps({"choices": [{"message": {"role": "assistant", "content": "late"}, "finish_reason": "stop"}], "usage": {}}).encode()
+                try:
+                    self.send_response(200)
+                    self.send_header("content-length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                except OSError:
+                    pass
+
+            def log_message(self, *a):
+                pass
+
+        self.delay = delay
+        self.httpd = HTTPServer(("127.0.0.1", 0), H)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+
+def test_stop_ends_a_hanging_call_within_seconds():
+    import time as _t
+    from pramana.llm.base import Cancelled
+    srv = _SlowServer(delay=20)
+    llm = OpenAICompatLLM(srv.url, "k", "m", provider="openai")
+    threading.Timer(1.0, llm.cancel.set).start()
+    t0 = _t.time()
+    with pytest.raises(Cancelled):
+        llm.chat([{"role": "user", "content": "x"}])
+    assert _t.time() - t0 < 4
+
+
+def test_an_endpoint_that_never_answers_gives_a_clear_error(monkeypatch):
+    from pramana.llm.base import ModelUnresponsive
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    srv = _SlowServer(delay=3)
+    llm = OpenAICompatLLM(srv.url, "k", "slow-model", provider="openai", timeout_s=1.0)
+    with pytest.raises(ModelUnresponsive, match="pick another model"):
+        llm.chat([{"role": "user", "content": "x"}])
