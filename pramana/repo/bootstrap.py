@@ -84,8 +84,13 @@ def _bootstrap_python(repo: Path, log, timeout_s: int) -> List[str]:
                 break
     if not installed and any((repo / f).exists() for f in ("pyproject.toml", "setup.py", "setup.cfg")):
         installed = pip_install(["-e", "."], "pip install -e .")
-    for req in ("requirements.txt", "requirements-dev.txt", "requirements_test.txt", "requirements-test.txt",
-                "test-requirements.txt", "requirements/test.txt", "requirements/dev.txt", "requirements/tests.txt"):
+    reqs = ["requirements.txt", "requirements-dev.txt", "requirements_test.txt", "requirements-test.txt",
+            "test-requirements.txt", "requirements/test.txt", "requirements/dev.txt", "requirements/tests.txt"]
+    # any other test/dev requirements file (measured: arrow keeps its test deps in requirements/requirements-tests.txt,
+    # so its own suite could not import in the workspace and every regression check was blind)
+    for pat in ("requirements*/*test*.txt", "requirements*/*dev*.txt", "*requirements*test*.txt", "*test*requirements*.txt"):
+        reqs += [str(p.relative_to(repo)) for p in sorted(repo.glob(pat)) if str(p.relative_to(repo)) not in reqs]
+    for req in reqs:
         if (repo / req).is_file():
             pip_install(["-r", req], f"pip install -r {req}")
     pip_install(["pytest"], "pytest")
