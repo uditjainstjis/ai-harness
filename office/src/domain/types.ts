@@ -38,7 +38,9 @@ export interface Room {
   h: number;
 }
 
-export type AgentStatus = 'idle' | 'working' | 'walking' | 'meeting';
+export type AgentStatus = 'idle' | 'working' | 'walking' | 'meeting' | 'thinking';
+/** At a desk on a task: typing, or waiting on the model's reply. */
+export const isBusy = (s: AgentStatus) => s === 'working' || s === 'thinking';
 
 export interface Agent {
   id: string;

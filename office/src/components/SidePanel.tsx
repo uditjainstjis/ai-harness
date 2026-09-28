@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DEPT_ROOMS, PHASE_LINE, ROLES, ROOM_BY_ID, STORY_STAGES } from '../domain/office';
-import type { Approval, OfficeState, StatusReport, StoryStage, Task } from '../domain/types';
+import { isBusy, type Approval, type OfficeState, type StatusReport, type StoryStage, type Task } from '../domain/types';
 import { portraitURL } from '../art/pixelPeople';
 import { fmtTokens, type OfficeSim } from '../sim/engine';
 import { LiveBrief, LiveOverview } from '../live/LivePanels';
@@ -14,7 +14,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'reports', label: 'Reports' },
 ];
 
-export function SidePanel({ state, sim, selected, live }: { state: OfficeState; sim: OfficeSim; selected?: string; live?: boolean }) {
+export function SidePanel({ state, sim, selected, live, onInspect }: { state: OfficeState; sim: OfficeSim; selected?: string; live?: boolean; onInspect?: (id: string) => void }) {
   const [tab, setTab] = useState<Tab>('overview');
   const agent = selected ? state.agents.find((a) => a.id === selected) : undefined;
 
@@ -54,7 +54,7 @@ export function SidePanel({ state, sim, selected, live }: { state: OfficeState; 
       </nav>
 
       <div className="tab-body">
-        {tab === 'overview' && (live ? <LiveOverview state={state} sim={sim} /> : <Overview state={state} />)}
+        {tab === 'overview' && (live ? <LiveOverview state={state} sim={sim} onInspect={onInspect} /> : <Overview state={state} />)}
         {tab === 'handoffs' && <Handoffs state={state} />}
         {tab === 'tasks' && <Tasks state={state} />}
         {tab === 'activity' && <Activity state={state} />}
@@ -150,7 +150,7 @@ function Overview({ state }: { state: OfficeState }) {
   const current = PHASE_LINE.findIndex((p) => p.id === state.phase);
   const depts = DEPT_ROOMS.map((r) => {
     const staff = state.agents.filter((a) => a.home === r.id);
-    return { room: r, count: staff.length, working: staff.filter((a) => a.status === 'working').length };
+    return { room: r, count: staff.length, working: staff.filter((a) => isBusy(a.status)).length };
   });
   const max = Math.max(...depts.map((d) => d.count), 1);
   const stories = state.tasks.filter((t) => t.kind === 'story');
@@ -207,7 +207,7 @@ function Overview({ state }: { state: OfficeState }) {
           ))}
         </div>
         <div className="muted small">
-          {state.agents.length - 1} agents employed · {state.agents.filter((a) => a.status === 'working').length} working now ·{' '}
+          {state.agents.length - 1} agents employed · {state.agents.filter((a) => isBusy(a.status)).length} working now ·{' '}
           {state.flights.length} hand-off{state.flights.length === 1 ? '' : 's'} in flight
         </div>
       </section>

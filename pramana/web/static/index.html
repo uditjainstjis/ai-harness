@@ -56,7 +56,7 @@
    <aside class="office-card card" onclick="location.href='/office'" title="Open the whole office">
      <div class="office-head"><span>🏢 Your team, live</span><span class="office-open">Open the office ↗</span></div>
      <div class="office-frame">
-       <iframe src="/static/office/index.html?mini" title="Pramana's live office" tabindex="-1"></iframe>
+       <iframe class="live-office" data-src="/static/office/index.html?mini" title="Pramana's live office" tabindex="-1"></iframe>
        <div class="office-click"></div>
      </div>
      <div class="office-foot">Every person here is a real step of a real run: setup, triage, finding the code, the fix, and the
@@ -92,6 +92,10 @@
     <div class="head-right"><button class="btn stop-btn" id="batch-stop" onclick="stopBatch()">Stop all</button>
       <div id="batch-status" class="status-pill running"><span class="spin"></span>Working</div></div>
   </div>
+  <div class="card office-live" onclick="location.href='/office'" title="Open the whole office">
+    <div class="office-head"><span>🏢 The team on it, live: each issue has its own developer</span><span class="office-open">Open the full office ↗</span></div>
+    <div class="office-frame"><iframe class="live-office" data-src="/static/office/index.html?mini" title="Live office" tabindex="-1"></iframe><div class="office-click"></div></div>
+  </div>
   <div class="batch-clock"><div><b id="batch-clock">0s</b><span>total, first issue to last</span></div>
     <div><b id="batch-verified">0</b><span>verified</span></div><div><b id="batch-parallel">0</b><span>running in parallel</span></div>
     <div><b id="batch-calls">0</b><span>model calls</span></div></div>
@@ -107,6 +111,10 @@
       <div id="run-status" class="status-pill running"><span class="spin"></span>Starting</div></div>
   </div>
   <ol class="stepper" id="stepper"></ol>
+  <div class="card office-live office-strip" onclick="location.href='/office'" title="Open the whole office">
+    <div class="office-head"><span>🏢 Watch it in the office</span><span class="office-open">Open the full office ↗</span></div>
+    <div class="office-frame"><iframe class="live-office" data-src="/static/office/index.html?mini" title="Live office" tabindex="-1"></iframe><div class="office-click"></div></div>
+  </div>
   <div id="wait-line" class="wait-line" hidden></div>
   <div class="stats">
     <div><b id="st-time">0s</b><span>elapsed</span></div>

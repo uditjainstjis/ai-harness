@@ -196,7 +196,9 @@ class Run:
                 "tokens": (r.get("usage") or {}).get("total_tokens"), "want_pr": self.want_pr,
                 "github": self.github, "model": self.model, "history_dir": str(self.dir or ""),
                 "batch_id": getattr(self, "batch_id", ""), "issue": getattr(self, "issue_number", None),
-                "now": self.now, "phase": self.phase, "calls": self.calls, "split": self.split}
+                "now": self.now, "phase": self.phase, "split": self.split,
+                # the live counter starts at 0 for runs loaded from history; the result has the real count
+                "calls": self.calls or (r.get("usage") or {}).get("calls") or 0}
 
 
 class Batch:

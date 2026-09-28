@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { sceneFrames } from '../art/pixelPeople';
 import { FLOOR, ROLES, ROOM_BY_ID, ROOMS } from '../domain/office';
-import type { Agent, Flight, OfficeState, Room, RoomId, Task } from '../domain/types';
+import { isBusy, type Agent, type Flight, type OfficeState, type Room, type RoomId, type Task } from '../domain/types';
 
 // Layout grid for desks inside a room.
 const CELL_W = 64;
@@ -65,16 +65,20 @@ const STATUS_LABEL: Record<Agent['status'], string | undefined> = {
   working: 'working',
   walking: 'walking',
   meeting: 'in meeting',
+  thinking: 'thinking…',
 };
 
 export function Floor({
   state,
   selected,
   onSelect,
+  live = false,
 }: {
   state: OfficeState;
   selected?: string;
   onSelect: (id?: string) => void;
+  /** real runs: finished work lands in the Evidence Room as proven, nothing is "shipped" until a PR is opened */
+  live?: boolean;
 }) {
   // Stable per-room ordering so avatars don't shuffle every tick.
   const byRoom = new Map<RoomId, Agent[]>();
@@ -116,7 +120,7 @@ export function Floor({
             key={room.id}
             room={room}
             headcount={people.length}
-            working={people.filter((a) => a.status === 'working').length}
+            working={people.filter((a) => isBusy(a.status)).length}
             tasks={openTasks.filter((t) => t.room === room.id).length}
           />
         );
@@ -136,7 +140,8 @@ export function Floor({
           room={room}
           people={byRoom.get(room.id) ?? []}
           tasks={openTasks.filter((t) => t.room === room.id)}
-          shipped={room.id === 'server' ? shipped : undefined}
+          shipped={room.id === (live ? 'board' : 'server') ? shipped : undefined}
+          shippedLabel={live ? 'proven' : 'shipped'}
         />
       ))}
 
@@ -209,7 +214,7 @@ function Plant({ x, y }: { x: number; y: number }) {
   );
 }
 
-function RoomFront({ room, people, tasks, shipped }: { room: Room; people: Agent[]; tasks: Task[]; shipped?: number }) {
+function RoomFront({ room, people, tasks, shipped, shippedLabel = 'shipped' }: { room: Room; people: Agent[]; tasks: Task[]; shipped?: number; shippedLabel?: string }) {
   const { cols, rows } = grid(room);
   const seats = Array.from({ length: Math.max(cols * rows, people.length) }, (_, i) => seat(room, i));
   const shown = tasks.slice(0, 6);
@@ -217,7 +222,7 @@ function RoomFront({ room, people, tasks, shipped }: { room: Room; people: Agent
     <g>
       {seats.map((d, i) => {
         const person = people[i];
-        const busy = person?.status === 'working';
+        const busy = !!person && isBusy(person.status);
         return (
           <g key={i}>
             {/* desk */}
@@ -252,7 +257,7 @@ function RoomFront({ room, people, tasks, shipped }: { room: Room; people: Agent
         <g transform={`translate(${room.x + 86}, ${room.y + room.h - 30})`}>
           <rect width="104" height="20" fill="#6BCF7F" stroke="#1A1320" strokeWidth="2" />
           <text x="52" y="14" textAnchor="middle" className="shipped">
-            {shipped} shipped
+            {shipped} {shippedLabel}
           </text>
         </g>
       )}
@@ -317,7 +322,7 @@ function AgentSprite({
           <text y="0" textAnchor="middle" className="tag-text">
             {label}
           </text>
-          {task && agent.status === 'working' && (
+          {task && isBusy(agent.status) && (
             <g transform={`translate(${-label.length * 3.5 - 6}, 4)`}>
               <rect width={label.length * 7 + 12} height="4" fill="#1A1320" />
               <rect x="1" y="1" width={Math.max(0, (label.length * 7 + 10) * task.progress)} height="2" fill="#6BCF7F" />

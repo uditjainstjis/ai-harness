@@ -269,6 +269,9 @@ export class LiveOffice {
     for (const run of runs.slice(0, 60)) {
       const t = this.tracks.get(run.id);
       if (t) {
+        // a run started from a link is titled with the link until the issue is read from GitHub
+        const title = (run.title || '').replace(/^#\d+\s*/, '').slice(0, 70);
+        if (title && run.title !== t.run.title) t.task.title = `${t.task.title.split(' ')[0]} ${title}`;
         t.run = run;
         if (!ACTIVE.has(run.status) && t.stage !== 'done') this.pull(t, true);
         continue;
@@ -285,9 +288,12 @@ export class LiveOffice {
 
   private track(run: RunSummary) {
     const n = this.devN++;
-    const label = run.issue ? `#${run.issue}` : `R${n + 1}`;
+    const num = run.issue ?? /\/issues\/(\d+)/.exec(run.title || '')?.[1];
+    const label = num ? `#${num}` : `R${n + 1}`;
     const devId = `dev-${run.id}`;
-    const dev = this.agent(devId, `${DEV_NAMES[n % DEV_NAMES.length]} ${label}`, 'fullstack', 'engineering');
+    let h = 0;                                   // the same issue keeps the same developer on every page
+    for (const ch of run.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const dev = this.agent(devId, `${DEV_NAMES[h % DEV_NAMES.length]} ${label}`, 'fullstack', 'engineering');
     this.s.agents.push(dev);
     if (!this.first) {                     // a new issue: the developer appears at the Issue Desk and walks in
       dev.at = 'reception';
@@ -480,12 +486,23 @@ export class LiveOffice {
         continue;
       }
       const t = own ?? busy.get(a.id);
-      a.status = t ? 'working' : 'idle';
+      // the developer is the model: while its call is in flight it is thinking, otherwise it is at work
+      a.status = t ? (own && now < own.thinkingUntil ? 'thinking' : 'working') : 'idle';
       a.taskId = t?.task.id;
     }
     const open = [...this.tracks.values()].filter((t) => t.stage !== 'done').length;
     this.s.phase = open ? 'build' : 'idle';
     this.s.project = open ? { name: `${open} issue${open === 1 ? '' : 's'} in progress`, brief: '', startedTick: 0 } : undefined;
+  }
+
+  /** The run behind an agent on the floor (its developer, or the specialist working on it right now). */
+  runIdFor(agentId?: string): string | undefined {
+    if (!agentId) return undefined;
+    if (agentId.startsWith('dev-')) return agentId.slice(4);
+    const a = this.agentById(agentId);
+    if (!a?.taskId) return undefined;
+    for (const [id, t] of this.tracks) if (t.task.id === a.taskId) return id;
+    return undefined;
   }
 
   /** Is the model answering for this issue right now (a call in flight)? */

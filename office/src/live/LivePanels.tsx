@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ROOM_BY_ID } from '../domain/office';
-import type { OfficeState } from '../domain/types';
+import { isBusy, type OfficeState } from '../domain/types';
 import { fmtTokens, type OfficeSim } from '../sim/engine';
 import { STAGE, type BriefReply, type LiveOffice, type OpenIssue } from './liveOffice';
 
@@ -112,10 +112,10 @@ export function LiveBrief({ sim }: { sim: OfficeSim }) {
 }
 
 /** What every issue on the floor is doing right now, and what it has cost. */
-export function LiveOverview({ state, sim }: { state: OfficeState; sim: OfficeSim }) {
+export function LiveOverview({ state, sim, onInspect }: { state: OfficeState; sim: OfficeSim; onInspect?: (id: string) => void }) {
   const live = sim as unknown as LiveOffice;
   const tracks = [...live.tracks.values()];
-  const working = state.agents.filter((a) => a.status === 'working').length;
+  const working = state.agents.filter((a) => isBusy(a.status)).length;
   const order = Object.keys(STAGE) as (keyof typeof STAGE)[];
   return (
     <div className="stack">
@@ -130,7 +130,7 @@ export function LiveOverview({ state, sim }: { state: OfficeState; sim: OfficeSi
               const ok = t.verdict === 'verified';
               const idx = order.indexOf(t.stage as keyof typeof STAGE);
               return (
-                <div key={t.task.id} className={`live-issue ${done ? (ok ? 'ok' : 'bad') : ''}`}>
+                <div key={t.task.id} className={`live-issue ${done ? (ok ? 'ok' : 'bad') : ''}`} onClick={() => onInspect?.(t.run.id)} title="Open the evidence">
                   <div className="live-issue-head">
                     <strong>{t.task.title}</strong>
                     <span className="live-state">

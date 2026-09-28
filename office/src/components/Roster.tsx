@@ -3,7 +3,7 @@ import { ROLES, ROOM_BY_ID } from '../domain/office';
 import type { OfficeState } from '../domain/types';
 import { fmtTokens } from '../sim/engine';
 
-const STATUS_TEXT = { idle: 'idle', working: 'working', walking: 'walking', meeting: 'in meeting' } as const;
+const STATUS_TEXT = { idle: 'idle', working: 'working', walking: 'walking', meeting: 'in meeting', thinking: 'thinking' } as const;
 
 export function Roster({
   state,

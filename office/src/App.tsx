@@ -4,9 +4,11 @@ import { OrgChart } from './components/OrgChart';
 import { Roster } from './components/Roster';
 import { SidePanel } from './components/SidePanel';
 import { PHASE_LINE } from './domain/office';
-import type { OfficeState } from './domain/types';
+import { isBusy, type OfficeState } from './domain/types';
 import { OfficeSim, TICKS_PER_DAY } from './sim/engine';
 import { LiveOffice, applyLiveLabels } from './live/liveOffice';
+import { EvidenceDrawer } from './live/Evidence';
+import { Fleet } from './live/Fleet';
 import { useFullscreen } from './useFullscreen';
 
 /** Live (real Pramana runs) unless ?demo is in the URL; the simulation stays one click away. */
@@ -40,7 +42,14 @@ function Playback({ state }: { state: OfficeState }) {
 export function App() {
   const state = useSyncExternalStore(sim.subscribe, sim.getState);
   const [selected, setSelected] = useState<string>();
-  const [view, setView] = useState<'floor' | 'org'>('floor');
+  const [view, setView] = useState<'floor' | 'org' | 'fleet'>('floor');
+  const [inspect, setInspect] = useState<string>();
+  // live: clicking a person opens the evidence of the issue they are on
+  useEffect(() => {
+    if (!LIVE || !selected) return;
+    const id = (sim as unknown as LiveOffice).runIdFor(selected);
+    if (id) setInspect(id);
+  }, [selected]);
   const appRef = useRef<HTMLDivElement>(null);
   const fs = useFullscreen(appRef);
 
@@ -60,7 +69,7 @@ export function App() {
   }, [fs]);
 
   if (MINI) {
-    const working = state.agents.filter((a) => a.status === 'working' || a.status === 'walking').length;
+    const working = state.agents.filter((a) => isBusy(a.status) || a.status === 'walking').length;
     const open = state.tasks.filter((t) => t.room !== 'board').length;
     return (
       <div
@@ -71,7 +80,7 @@ export function App() {
         title="Open the whole office"
       >
         <div className="floor-wrap">
-          <Floor state={state} selected={undefined} onSelect={() => undefined} />
+          <Floor state={state} selected={undefined} onSelect={() => undefined} live={LIVE} />
         </div>
         <div className="mini-bar">
           <span className="live-dot">{open ? `${open} issue${open === 1 ? '' : 's'} · ${working} at work` : 'Team ready · live'}</span>
@@ -121,6 +130,11 @@ export function App() {
             <button role="tab" aria-selected={view === 'org'} className={view === 'org' ? 'active' : ''} onClick={() => setView('org')}>
               Org chart
             </button>
+            {LIVE && (
+              <button role="tab" aria-selected={view === 'fleet'} className={view === 'fleet' ? 'active' : ''} onClick={() => setView('fleet')}>
+                Fleet
+              </button>
+            )}
           </div>
           {!LIVE && <Playback state={state} />}
           {!LIVE && (
@@ -157,12 +171,23 @@ export function App() {
       <main className="main">
         <div className="floor-wrap">
           {view === 'floor' ? (
-            <Floor state={state} selected={selected} onSelect={setSelected} />
-          ) : (
+            <Floor state={state} selected={selected} onSelect={setSelected} live={LIVE} />
+          ) : view === 'org' ? (
             <OrgChart state={state} selected={selected} onSelect={setSelected} />
+          ) : (
+            <Fleet onInspect={setInspect} />
           )}
         </div>
-        <SidePanel state={state} sim={sim} selected={selected} live={LIVE} />
+        <SidePanel state={state} sim={sim} selected={selected} live={LIVE} onInspect={setInspect} />
+        {LIVE && inspect && (
+          <EvidenceDrawer
+            runId={inspect}
+            onClose={() => {
+              setInspect(undefined);
+              setSelected(undefined);
+            }}
+          />
+        )}
       </main>
 
       <Roster state={state} selected={selected} onSelect={setSelected} />

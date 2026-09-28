@@ -24,7 +24,7 @@ const MANAGERS: Record<Role, Role[]> = {
 /** Sibling order: leadership first, then delivery, then individual contributors. */
 const ROLE_ORDER: Role[] = ['client', 'pm', 'hr', 'architect', 'designer', 'scrum', 'lead', 'devops', 'qa', 'perf', 'fe', 'be', 'fullstack', 'mobile'];
 
-const STATUS_TEXT = { idle: 'idle', working: 'working', walking: 'walking', meeting: 'in meeting' } as const;
+const STATUS_TEXT = { idle: 'idle', working: 'working', walking: 'walking', meeting: 'in meeting', thinking: 'thinking' } as const;
 
 interface OrgNode {
   key: string;

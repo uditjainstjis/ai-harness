@@ -24,9 +24,19 @@ let pickState = null, batchTimer = null, lastBatch = null;
 function go(view, id) {
   ["home", "run", "pick", "batch"].forEach((v) => ($("#" + v).hidden = v !== view));
   if (batchTimer && view !== "batch") { clearInterval(batchTimer); batchTimer = null; }
-  if (view === "batch") { history.replaceState(null, "", "#batch=" + id); openBatch(id); return; }
+  if (view === "batch") { history.replaceState(null, "", "#batch=" + id); openBatch(id); syncOffice(); return; }
   if (view === "home") { history.replaceState(null, "", "/"); stopStream(); loadRecent(); $("#prompt").focus(); }
   if (view === "run") { history.replaceState(null, "", "#run=" + id); openRun(id); }
+  syncOffice();
+}
+/* the live office: loaded only in the view you are looking at (each copy follows every run) */
+function syncOffice() {
+  document.querySelectorAll("iframe.live-office").forEach((f) => {
+    const view = f.closest(".view");
+    const on = view && !view.hidden;
+    if (on && !f.getAttribute("src")) f.setAttribute("src", f.dataset.src);
+    if (!on && f.getAttribute("src")) f.removeAttribute("src");
+  });
 }
 
 /* ---------------- model pill + settings ---------------- */
