@@ -88,3 +88,32 @@ def test_config_is_thread_safe_and_honours_the_model_choice(monkeypatch):
     [t.join() for t in ts]
     assert set(seen) == {"nvidia/model-b"}
     assert dict(os.environ) == before          # the environment was never touched
+
+
+def test_mac_app_saves_the_pasted_key_privately_and_reloads_it(tmp_path, monkeypatch):
+    import stat
+    from pramana.web import server
+    monkeypatch.setattr(server, "APP_SETTINGS", tmp_path / "settings.json")
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    over = {"paths": {"runs_dir": str(tmp_path / "runs"), "workspace_dir": str(tmp_path / "ws")}}
+    monkeypatch.setenv("PRAMANA_APP", "0")
+    server.Studio(over).set_model({"mode": "api", "key": "sk-test-not-saved", "model": "m1"})
+    assert not (tmp_path / "settings.json").exists()          # outside the app nothing is written
+    monkeypatch.setenv("PRAMANA_APP", "1")
+    s = server.Studio(over)
+    s.set_model({"mode": "api", "key": "sk-test-123", "model": "m1", "base_url": "http://127.0.0.1:9/v1"})
+    f = tmp_path / "settings.json"
+    assert stat.S_IMODE(f.stat().st_mode) == 0o600
+    again = server.Studio(over)                                # next launch
+    assert again.session_model.get("AI_API_KEY") == "sk-test-123" and again.session_model.get("AI_MODEL") == "m1"
+    again.set_model({"mode": "api", "model": "m2", "base_url": "http://127.0.0.1:9/v1"})   # model only: key kept
+    assert server.Studio(over).session_model.get("AI_API_KEY") == "sk-test-123"
+    again.set_model({"mode": "forget"})
+    assert not f.exists() and again.session_model == {}
+
+
+def test_host_python_is_a_real_interpreter_inside_a_frozen_app(monkeypatch):
+    import sys
+    from pramana.repo.bootstrap import host_python
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert "python" in host_python() and host_python() != sys.executable

@@ -47,8 +47,17 @@ async function loadModel() {
 }
 function openSettings() {
   $("#drawer").hidden = false;
-  setMode(modelInfo && modelInfo.provider === "claude-cli" ? "claude" : "env");
-  $("#model-test").textContent = modelInfo ? `Now: ${modelInfo.model} via ${modelInfo.provider} (key: ${modelInfo.key_source})` : "";
+  const app = modelInfo && modelInfo.app;
+  // the Mac app has no shell to export AI_API_KEY from: pasting the key is its normal path
+  setMode(modelInfo && modelInfo.provider === "claude-cli" ? "claude"
+    : (!modelInfo || !modelInfo.ok || (app && modelInfo.key_source !== "AI_API_KEY")) ? "api" : "env");
+  $("#drawer-note").innerHTML = app
+    ? "Paste your API key once. Pramana keeps it on this Mac only (your Library folder, readable only by you) and sends it only to the model provider. A key exported as <code>AI_API_KEY</code> still takes priority."
+    : "Pramana works with any provider. The key is only ever read from <code>AI_API_KEY</code>, or typed here for this session (kept in memory, never saved).";
+  $("#forget-key").hidden = !(modelInfo && modelInfo.saved);
+  $("#api-key").placeholder = modelInfo && modelInfo.saved ? "saved — paste a new key to replace it"
+    : "paste a key (DeepSeek, OpenRouter, NVIDIA, OpenAI, Anthropic, …)";
+  $("#model-test").textContent = modelInfo && modelInfo.ok ? `Now: ${modelInfo.model} via ${modelInfo.provider} (key: ${modelInfo.key_source})` : "No API key yet.";
 }
 function closeSettings() { $("#drawer").hidden = true; }
 function setMode(m) {
@@ -89,7 +98,7 @@ async function loadModelPicker() {
     html += `<optgroup label="${esc(PRETTY[env.provider] || env.provider)} — your key">` +
       env.models.map((m) => `<option value="env:${esc(m.id)}">${m.recommended ? "★ " : ""}${esc(m.id)}</option>`).join("") + "</optgroup>";
   }
-  if (!html) html = `<option value="">No API key — set AI_API_KEY or click the model button</option>`;
+  if (!html) html = `<option value="">${modelInfo && modelInfo.app ? "No API key yet — click the model button to paste one" : "No API key — set AI_API_KEY or click the model button"}</option>`;
   sel.innerHTML = html;
   const want = `env:${cur.model}`;
   if ([...sel.options].some((o) => o.value === want)) sel.value = want;
@@ -499,6 +508,9 @@ setInterval(pollActive, 3000);
 document.addEventListener("keydown", (e) => { if (e.key === "." && (e.metaKey || e.ctrlKey)) stopAll(); });   // ⌘. = stop everything
 
 /* ---------------- boot ---------------- */
-loadModel().then(loadModelPicker); loadDemos(); understood();
+loadModel().then(() => { loadModelPicker(); if (modelInfo && !modelInfo.ok) openSettings(); });   // first launch: ask for the key
+loadDemos(); understood();
+window.addEventListener("focus", () => loadModel());   // a key set elsewhere shows up as soon as you come back
+async function forgetKey() { await api("/api/model", { mode: "forget" }); $("#api-key").value = ""; await loadModel(); openSettings(); }
 const m = location.hash.match(/run=([\w-]+)/), mb = location.hash.match(/batch=([\w-]+)/);
 if (m) go("run", m[1]); else if (mb) go("batch", mb[1]); else go("home");

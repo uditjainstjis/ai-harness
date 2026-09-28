@@ -147,7 +147,7 @@
 <div id="drawer" class="drawer" hidden>
   <div class="drawer-panel card">
     <div class="drawer-head"><h3>Model</h3><button class="icon-btn" onclick="closeSettings()">✕</button></div>
-    <p class="muted small">Pramana works with any provider. The key is only ever read from <code>AI_API_KEY</code>, or typed here for this session (kept in memory, never saved).</p>
+    <p class="muted small" id="drawer-note">Pramana works with any provider. The key is only ever read from <code>AI_API_KEY</code>, or typed here for this session (kept in memory, never saved).</p>
     <div class="seg" id="mode-seg">
       <button data-mode="env" onclick="setMode('env')">Key from AI_API_KEY</button>
       <button data-mode="api" onclick="setMode('api')">Paste a key</button>
@@ -162,6 +162,7 @@
       <label>Base URL (optional) <input id="api-base" placeholder="only for a custom endpoint, e.g. https://integrate.api.nvidia.com/v1"></label>
     </div>
     <div class="drawer-foot">
+      <button class="btn" id="forget-key" onclick="forgetKey()" hidden>Remove saved key</button>
       <button class="btn" onclick="testModel()">Test connection</button>
       <button class="primary" onclick="saveModel()">Use this model</button>
     </div>

@@ -20,6 +20,12 @@ make test                     # offline unit tests + (with a key) the end-to-end
 the report, and says which API, endpoint and model it is using. On a machine without a display, `make run` serves the app and runs the
 terminal version in the same session.
 
+**Mac app:** download `Pramana-<version>-macos-arm64.dmg` from the
+[Releases](https://github.com/uditjainstjis/ai-harness/releases) page, drag Pramana to Applications and open it
+(first time: System Settings → Privacy & Security → *Open Anyway*, since the app is not notarized). It asks for your
+API key once and keeps it on that Mac only (`~/Library/Application Support/Pramana`, readable only by you); an exported
+`AI_API_KEY` still wins. Build it yourself with `make dmg`.
+
 Non-interactive: `make run REPO=/path/or/git-url ISSUE=https://github.com/o/r/issues/123 TEST="pytest tests/test_x.py"`
 (the issue can also be piped on stdin).
 

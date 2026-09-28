@@ -244,12 +244,42 @@ def _reset(repo: Path, base: str) -> None:
     _git(repo, "clean", "-fdq", "-e", ".venv", "-e", "venv", "-e", "node_modules", "-e", ".pramana-env")
 
 
+APP_SETTINGS = Path.home() / "Library" / "Application Support" / "Pramana" / "settings.json"
+
+
+def app_mode() -> bool:
+    """Running as the Mac app (Pramana.app), where there is no shell to export AI_API_KEY from."""
+    return os.environ.get("PRAMANA_APP") == "1"
+
+
+def load_saved_model() -> Dict[str, str]:
+    try:
+        data = json.loads(APP_SETTINGS.read_text())
+        return {k: str(v) for k, v in data.items() if k in ("AI_API_KEY", "AI_PROVIDER", "AI_MODEL", "AI_BASE_URL") and v}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_model_settings(sm: Dict[str, str]) -> None:
+    """The app keeps the key the user pasted in their own Library folder, readable only by them (0600).
+    Nothing is ever written into the repository or the app bundle."""
+    APP_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    tmp = APP_SETTINGS.with_suffix(".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(sm, fh)
+    os.replace(tmp, APP_SETTINGS)
+
+
 class Studio:
     def __init__(self, cfg_overrides: Optional[Dict[str, Any]] = None) -> None:
         self.overrides = cfg_overrides or {}
         self.runs: Dict[str, Run] = {}
         self.lock = threading.Lock()
-        self.session_model: Dict[str, str] = {}   # set from the settings panel; never written to disk
+        self.session_model: Dict[str, str] = {}   # set from the settings panel
+        self.app = app_mode()
+        if self.app and not os.environ.get("AI_API_KEY"):
+            self.session_model = load_saved_model()   # the key pasted into the Mac app last time
         self._models_cache: Dict[Any, Any] = {}
         self.batches: Dict[str, Batch] = {}
         try:
@@ -287,10 +317,12 @@ class Studio:
             return {"ok": False, "error": str(e)[:300]}
         prov = cfg.resolved_provider
         source = ("your logged-in Claude Code (no key needed)" if prov == "claude-cli"
-                  else "a key entered in this app (memory only)" if self.session_model.get("AI_API_KEY")
+                  else ("saved in Pramana's settings on this Mac" if self.app else "a key entered in this app (memory only)")
+                  if self.session_model.get("AI_API_KEY")
                   else "AI_API_KEY" if cfg.api_key else "not configured")
         return {"ok": prov not in ("unconfigured", ""), "provider": prov, "model": cfg.model.name,
-                "base_url": cfg.model.base_url if prov not in ("claude-cli", "mock") else "", "key_source": source}
+                "base_url": cfg.model.base_url if prov not in ("claude-cli", "mock") else "", "key_source": source,
+                "app": self.app, "saved": bool(self.app and load_saved_model().get("AI_API_KEY"))}
 
     def models(self) -> Dict[str, Any]:
         """Chat models the current key can use, the recommended ones first."""
@@ -320,10 +352,20 @@ class Studio:
             self.session_model = {"AI_PROVIDER": "claude-cli", "AI_MODEL": body.get("model") or "sonnet",
                                   "AI_API_KEY": "", "AI_BASE_URL": ""}
         elif mode == "api":
+            prev_key = self.session_model.get("AI_API_KEY", "")
             self.session_model = {"AI_PROVIDER": body.get("provider") or "auto", "AI_MODEL": body.get("model") or "",
                                   "AI_BASE_URL": body.get("base_url") or ""}
-            if body.get("key"):
-                self.session_model["AI_API_KEY"] = body["key"]
+            key = (body.get("key") or "").strip() or prev_key     # changing only the model keeps the key
+            if key:
+                self.session_model["AI_API_KEY"] = key
+            if self.app and key:
+                save_model_settings({k: v for k, v in self.session_model.items() if v})
+        elif mode == "forget":   # the Mac app's "Remove saved key"
+            try:
+                APP_SETTINGS.unlink()
+            except OSError:
+                pass
+            self.session_model = {}
         else:  # the environment's key (what `make run` was started with), optionally another of its models
             self.session_model = {"AI_MODEL": body["model"]} if body.get("model") else {}
         return self.model_info()
@@ -795,6 +837,22 @@ def has_display() -> bool:
     if sys.platform in ("darwin", "win32"):
         return True
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def start(port: int = 8765, overrides: Optional[Dict[str, Any]] = None):
+    """Serve the Studio on a background thread; returns (url, studio, httpd). Used by the Mac app."""
+    studio = Studio(overrides)
+    for p in range(port, port + 20):
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", p), make_handler(studio))
+            break
+        except OSError:
+            continue
+    else:
+        raise SystemExit(f"no free port between {port} and {port + 19}")
+    httpd.daemon_threads = True
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{httpd.server_address[1]}", studio, httpd
 
 
 def serve(port: int = 8765, open_app: bool = True, overrides: Optional[Dict[str, Any]] = None) -> None:

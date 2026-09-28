@@ -40,7 +40,8 @@ def _python_env(repo: Path, cache: Path) -> None:
             subprocess.run(["uv", "venv", "-q", str(venv)], check=True)
             subprocess.run(["uv", "pip", "install", "-q", "--python", str(venv / "bin" / "python"), "pytest"], check=True)
         else:
-            subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
+            from .repo.bootstrap import host_python
+            subprocess.run([host_python(), "-m", "venv", str(venv)], check=True)
             subprocess.run([str(venv / "bin" / "python"), "-m", "pip", "install", "-q", "pytest"], check=True)
     (repo / ".venv").symlink_to(venv, target_is_directory=True)
 

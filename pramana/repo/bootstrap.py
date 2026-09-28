@@ -21,6 +21,17 @@ def _log(cb: Optional[Callable[[str], None]], msg: str) -> None:
         cb(msg)
 
 
+def host_python() -> str:
+    """A real Python for target repos. Inside the Mac app (a frozen bundle) sys.executable is the app itself."""
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    for cand in ("python3.13", "python3.12", "python3.11", "python3.10", "python3"):
+        found = shutil.which(cand)
+        if found:
+            return found
+    return "python3"
+
+
 def bootstrap(repo: Path, log: Optional[Callable[[str], None]] = None, timeout_s: int = 600) -> List[str]:
     notes: List[str] = []
     has_py = any((repo / f).exists() for f in ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"))
@@ -56,7 +67,7 @@ def _bootstrap_python(repo: Path, log, timeout_s: int) -> List[str]:
             shutil.rmtree(venv, ignore_errors=True)
     if pip is None:
         try:
-            subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True, cwd=repo, timeout=180,
+            subprocess.run([host_python(), "-m", "venv", str(venv)], check=True, cwd=repo, timeout=180,
                            capture_output=True, text=True)
             pip = [str(venv / "bin" / "python"), "-m", "pip", "install", "-q"]
         except (subprocess.SubprocessError, OSError) as e:

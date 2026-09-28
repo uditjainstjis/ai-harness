@@ -5,6 +5,7 @@
 #   make test    unit tests + (if AI_API_KEY is set) a quick end-to-end run on 2 bundled tasks with hidden tests
 #   make bench   the full bundled benchmark (4 tasks, Python + JavaScript, bug fixes + a feature)
 #   make clean   remove generated artefacts
+#   make dmg     build the Mac app + disk image (dist/Pramana-<version>-macos-<arch>.dmg)
 # The API key is read from the environment (AI_API_KEY) and never stored in the repository.
 
 SHELL   := /bin/bash
@@ -14,7 +15,7 @@ PRAMANA := $(BIN)/pramana
 # the key reaches commands through the environment, never through a command line (visible in `ps`)
 export AI_API_KEY
 
-.PHONY: stop tui setup run test clean doctor bench help
+.PHONY: stop tui setup run test clean doctor bench help dmg
 
 help:
 	@sed -n '2,7p' Makefile
@@ -52,6 +53,9 @@ doctor:
 
 bench:
 	@$(PRAMANA) bench --suite $(or $(SUITE),mini) --plain
+
+dmg:
+	@bash packaging/macos/build_dmg.sh
 
 clean:
 	@rm -rf $(VENV) runs workspace .pytest_cache build dist *.egg-info
