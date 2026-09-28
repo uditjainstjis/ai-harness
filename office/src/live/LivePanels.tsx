@@ -3,6 +3,7 @@ import { ROOM_BY_ID } from '../domain/office';
 import { isBusy, type OfficeState } from '../domain/types';
 import { fmtTokens, type OfficeSim } from '../sim/engine';
 import { STAGE, type BriefReply, type LiveOffice, type OpenIssue } from './liveOffice';
+import { Conversation } from './Ticker';
 
 const DEMO_REPO = 'https://github.com/Pranav-Singh-Devloper/harness-demo-recipes';
 
@@ -119,6 +120,10 @@ export function LiveOverview({ state, sim, onInspect }: { state: OfficeState; si
   const order = Object.keys(STAGE) as (keyof typeof STAGE)[];
   return (
     <div className="stack">
+      <section>
+        <h3>Live conversation</h3>
+        <Conversation chatter={state.chatter} />
+      </section>
       <section>
         <h3>On the floor now</h3>
         {tracks.length === 0 ? (

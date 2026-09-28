@@ -498,6 +498,10 @@ class Studio:
 
     def _register(self, run: Run, raw_prompt: str = "", raw_repo: str = "") -> None:
         run.dir.mkdir(parents=True, exist_ok=True)
+        if not getattr(run, "issue_number", None):          # a single issue link: it is issue #N like in a batch
+            m = re.search(r"github\.com/[^/\s]+/[^/\s]+/issues/(\d+)", run.prompt or "")
+            if m:
+                run.issue_number = int(m.group(1))
         info = self.model_info()
         run.model = {k: info.get(k) for k in ("provider", "model", "base_url", "key_source")}
         run.save("input.json", {"id": run.id, "created": run.created, "prompt": run.prompt, "repo": run.repo_spec,

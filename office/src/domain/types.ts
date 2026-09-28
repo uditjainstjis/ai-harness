@@ -195,6 +195,26 @@ export interface StatusReport {
   next: string[];
 }
 
+/** Something a person says on the floor (live mode): what a real step of the run just did. */
+export interface Bubble {
+  id: string;
+  agentId: string;
+  text: string;
+  tone: 'say' | 'good' | 'bad' | 'think';
+  start: number; // wall-clock ms: bubbles are paced so each step can be followed
+  until: number;
+}
+
+/** One line of the floor's running conversation, oldest first. */
+export interface Chatter {
+  id: number;
+  at: number; // wall-clock ms it becomes visible
+  from: string;
+  to?: string;
+  text: string;
+  tone: 'say' | 'good' | 'bad' | 'think';
+}
+
 export interface OfficeState {
   tick: number;
   day: number;
@@ -206,6 +226,8 @@ export interface OfficeState {
   agents: Agent[];
   tasks: Task[];
   flights: Flight[];
+  bubbles?: Bubble[];
+  chatter?: Chatter[];
   handoffs: Handoff[];
   approvals: Approval[];
   log: LogEntry[];

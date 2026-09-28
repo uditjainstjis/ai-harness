@@ -9,7 +9,7 @@
  * when the harness is doing their step. Everything is driven by the events the run really emits.
  */
 import { ROLES, ROOMS } from '../domain/office';
-import type { Agent, Flight, Handoff, LogEntry, OfficeState, Role, RoomId, Task } from '../domain/types';
+import type { Agent, Bubble, Flight, Handoff, LogEntry, OfficeState, Role, RoomId, Task } from '../domain/types';
 
 export interface RunSummary {
   id: string;
@@ -84,6 +84,24 @@ export const STAGE: Record<WorkStage, { room: RoomId; worker: string; devAt: Roo
 const ACTIVE = new Set(['running', 'preparing', 'starting', 'queued']);
 const LINGER_MS = 30_000; // a finished issue stays in the Evidence Room this long, then its developer leaves
 const WALK_MS = 1700;
+const BEAT_MS = 1800;   // one visible step at a time: events arrive in bursts, people need ~2 s to follow each
+const FLIGHT_MS = 1900;
+const SAY_MS = 4200;
+
+const short = (v: unknown, n: number) => {
+  const x = String(v ?? '').replace(/\s+/g, ' ').trim();
+  return x.length > n ? `${x.slice(0, n - 1)}…` : x;
+};
+/** "['src/a.js', 'b.js']" (a Python list sent as text) -> ["src/a.js", "b.js"] */
+const quoted = (v: unknown) => (String(v ?? '').match(/'([^']+)'/g) ?? []).map((x) => x.slice(1, -1));
+const firstSentence = (x: string) => x.split(/(?<=[.!?])\s/)[0];
+const VERB: Record<string, string> = { view: 'Reading', edit: 'Editing', create: 'Writing', str_replace: 'Editing', insert: 'Editing', undo_edit: 'Undoing' };
+function toolLine(name: string, brief: string) {
+  const m = /^(view|edit|create|str_replace|insert|undo_edit)\s+(.*)/.exec(brief.trim());
+  if (m) return `${VERB[m[1]]} ${short(m[2], 40)}`;
+  if (name === 'bash') return `$ ${short(brief, 44)}`;
+  return short(`${name} ${brief}`, 48);
+}
 
 /** Renames the rooms and roles to what they really are in Pramana (the art stays the same). */
 export function applyLiveLabels() {
@@ -133,6 +151,8 @@ export interface Track {
   endedAt?: number;
   thinkingUntil: number;
   verdict?: string;
+  nextBeat: number;  // wall-clock ms the next visible step of this issue may start
+  callStart: number; // when the model call in flight started (from the 'wait' events)
 }
 
 export class LiveOffice {
@@ -146,6 +166,9 @@ export class LiveOffice {
   private logId = 0;
   private handoffId = 0;
   private flightId = 0;
+  private bubbleId = 0;
+  private chatId = 0;
+  private evAt = 0; // when the event being handled happened (history goes into the conversation without animation)
   private devN = 0;
   private first = true;
   totals = { verified: 0, other: 0 };
@@ -165,6 +188,8 @@ export class LiveOffice {
       agents: STAFF.map((p) => this.agent(p.id, p.name, p.role, p.room)),
       tasks: [],
       flights: [],
+      bubbles: [],
+      chatter: [],
       handoffs: [],
       approvals: [],
       log: [],
@@ -318,8 +343,11 @@ export class LiveOffice {
       trail: ['reception'],
     };
     this.s.tasks.push(task);
-    this.tracks.set(run.id, { run, task, devId, stage: 'arrive', worker: 'you', cursor: 0, fetching: false, final: false, tokens: 0, thinkingUntil: 0 });
+    this.tracks.set(run.id, { run, task, devId, stage: 'arrive', worker: 'you', cursor: 0, fetching: false, final: false, tokens: 0, thinkingUntil: 0, nextBeat: 0, callStart: 0 });
     this.log(`${dev.name} picked up ${task.title}`, 'hire', 'reception');
+    const t = this.tracks.get(run.id)!;
+    const what = /^https?:/.test(title) ? label : `${label}: ${short(title, 36)}`;
+    this.say(t, 'intake', `New issue ${what}. ${dev.name.split(' ')[0]}, it's yours`, !this.first);
   }
 
   /** Short polls, not open streams: browsers allow only 6 connections per host and a batch can run 10 issues. */
@@ -329,7 +357,9 @@ export class LiveOffice {
     try {
       const r = await (await fetch(`${this.base}/api/runs/${t.run.id}/events.json?since=${t.cursor}`)).json();
       const catchingUp = r.events.length > 25; // a run already under way: jump to where it is, no parade of hand-offs
-      for (const ev of r.events as Ev[]) this.onEvent(t, ev, !catchingUp);
+      const now = Date.now() / 1000;
+      // only what just happened is acted out; older steps (a page opened mid-run) just set where everyone is
+      for (const ev of r.events as Ev[]) this.onEvent(t, ev, !catchingUp && (ev.at == null || now - Number(ev.at) < 8));
       t.cursor = r.next;
       if (!ACTIVE.has(r.status) && r.events.length === 0) {
         t.final = true;
@@ -345,10 +375,15 @@ export class LiveOffice {
 
   private onEvent(t: Track, ev: Ev, animate: boolean) {
     const k = ev.kind;
+    this.evAt = ev.at != null ? Number(ev.at) * 1000 : Date.now();
     if (k === 'llm') {
       t.thinkingUntil = Date.now() + 2500;
+      t.callStart = 0;
       if (ev.total_tokens != null) this.addTokens(t, Number(ev.total_tokens) || 0);
-    } else if (k === 'wait') t.thinkingUntil = Date.now() + 6000;
+    } else if (k === 'wait') {
+      t.thinkingUntil = Date.now() + 6000;
+      t.callStart = Date.now() - (Number(ev.seconds) || 0) * 1000;
+    }
     else if (k === 'stage' && ev.name === 'setup') this.go(t, 'setup', animate);
     else if (k === 'phase' && ev.name) {
       const map: Record<string, WorkStage> = { intake: 'intake', localize: 'localize', reproduce: 'reproduce', fix: 'fix', verify: 'verify', review: 'review' };
@@ -364,17 +399,64 @@ export class LiveOffice {
       this.go(t, 'pr', animate);
       this.log(`${t.task.title}: ${ev.ok === false ? 'pull request failed' : `pull request ${ev.url ?? ''}`}`, ev.ok === false ? 'warn' : 'done', 'server', animate);
     } else if ((k === 'run' && ev.status === 'end') || k === 'done') this.finish(t, String(ev.result || ev.status || ''));
+    this.narrate(t, ev, animate);
+  }
+
+  /** What each real step says out loud. The words come from the event itself, nothing is made up. */
+  private narrate(t: Track, ev: Ev, animate: boolean) {
+    const k = ev.kind;
+    const msg = String(ev.message ?? '');
+    const say = (who: string, text: string, tone: Bubble['tone'] = 'say') => this.say(t, who, text, animate, tone);
+    let m: RegExpExecArray | null;
+    if (k === 'stage' && ev.name === 'setup') {
+      if (!/^installing/i.test(msg)) say('env', `${msg.replace(/^./, (c) => c.toUpperCase())}…`); // the install line says which
+    }
+    else if (k === 'stage' && ev.name === 'ready') say('env', `Repository ready. Over to you, ${this.first_(t)}`, 'good');
+    else if (k === 'log') {
+      if ((m = /installing (\w+) dependencies/i.exec(msg))) say('env', `Installing ${m[1]} dependencies…`);
+      else if ((m = /^env: (.*)/.exec(msg))) say('env', `✓ ${short(m[1], 40)}`, 'good');
+      else if (/^fast path: one call/.test(msg)) say('DEV', 'One shot: fix + failing test');
+      else if (/ran out of room/.test(msg)) say('DEV', 'Cut off mid-thought. Finishing the answer…');
+      else if ((m = /fast path round 2 \(\w+\): (.*)/.exec(msg))) say('proof', `Not yet: ${short(m[1], 48)}`, 'bad');
+      else if (/fast path not accepted/.test(msg)) say('review', 'Not proven. Full agent, from the top', 'bad');
+      else if (/endpoint busy|HTTP 5\d\d|429/.test(msg)) say('DEV', 'Model endpoint busy, retrying…', 'bad');
+    } else if (k === 'intake') say('intake', `${ev.language ?? 'Code'} · ${ev.files ?? '?'} files · tests: ${short(ev.test_command ?? 'none', 18)}`);
+    else if (k === 'localized') {
+      const top = quoted(ev.top).slice(0, 2);
+      if (top.length) say('loc', `Look at ${top.join(', ')}`);
+    } else if (k === 'triage') say('intake', `${String(ev.size ?? '?').replace(/^./, (c) => c.toUpperCase())} issue → ${short(ev.plan, 40)}`);
+    else if (k === 'criteria') say('intake', `Done when: ${short(String(ev.text ?? '').replace(/^1\.\s*/, ''), 52)}`);
+    else if (k === 'attempt' && Number(ev.attempt) > 1 && ev.status === 'start') say('review', `Attempt ${ev.attempt}: fresh start, lessons kept`, 'bad');
+    else if (k === 'llm') {
+      const d = /DIAGNOSIS:\s*([^\n]+)/.exec(String(ev.text ?? ''));
+      if (d) say('DEV', `💡 ${short(firstSentence(d[1]), 70)}`, 'good');
+    } else if (k === 'tool_call') say('DEV', toolLine(String(ev.name ?? ''), String(ev.brief ?? '')));
+    else if (k === 'tool_result' && (ev.is_error === true || ev.is_error === 'True')) say('DEV', `✗ ${short(ev.output, 44)}`, 'bad');
+    else if (k === 'verify' || k === 'checkpoint') {
+      const ok = ev.accepted === true || ev.accepted === 'True';
+      if (ok) say('proof', String(ev.checks ?? '').includes("'fixes'") ? '✓ Fails on the original, passes patched' : `✓ Proven (${ev.strength ?? '?'})`, 'good');
+      else if (k === 'verify') say('proof', '✗ Not proven yet', 'bad');
+    } else if (k === 'review') say('review', ev.verdict === 'approve' ? '✓ Approved' : `Changes: ${short(ev.concerns, 44)}`, ev.verdict === 'approve' ? 'good' : 'bad');
+    else if (k === 'nudge') {
+      m = /exact same `(\w+)` call (\d+) times/.exec(msg);
+      say('review', m ? `Same ${m[1]} call ${m[2]}×. Try something else` : short(msg, 50), 'bad');
+    } else if (k.startsWith('independent')) say('blind', 'Writing a blind test…');
+    else if (k === 'github' || k === 'pr') say('release', ev.ok === false ? '✗ Pull request failed' : '✓ Pull request opened', ev.ok === false ? 'bad' : 'good');
+  }
+
+  private first_(t: Track) {
+    return this.agentById(t.devId)?.name.split(' ')[0] ?? 'dev';
   }
 
   private go(t: Track, stage: WorkStage, animate: boolean) {
     if (t.stage === 'done' || t.stage === stage) return;
     const st = STAGE[stage];
-    this.handOver(t, st.room, st.worker, st.caption, animate);
+    const at = this.handOver(t, st.room, st.worker, st.caption, animate);
     t.stage = stage;
     t.worker = st.worker;
     const dev = this.agentById(t.devId);
     if (dev && dev.at !== st.devAt) {
-      if (animate) this.walk(dev, st.devAt);
+      if (animate) this.later(at, () => this.walk(dev, st.devAt));
       else dev.at = st.devAt;
     }
   }
@@ -382,7 +464,7 @@ export class LiveOffice {
   private finish(t: Track, result: string) {
     if (t.stage === 'done') return;
     const ok = result === 'verified';
-    this.handOver(t, 'board', 'you', ok ? 'verified fix + evidence' : `ended: ${result || 'no proof'}`, true);
+    const at = this.handOver(t, 'board', 'you', ok ? 'verified fix + evidence' : `ended: ${result || 'no proof'}`, true);
     t.stage = 'done';
     t.verdict = result;
     t.worker = 'you';
@@ -393,8 +475,9 @@ export class LiveOffice {
     const dev = this.agentById(t.devId);
     if (dev) {
       if (ok) dev.tasksDone += 1;
-      this.walk(dev, 'board');
+      this.later(at, () => this.walk(dev, 'board'));
     }
+    this.say(t, 'you', ok ? `Verified ✓ Thanks, ${this.first_(t)}!` : `Ended: ${short(result || 'no proof', 30)}`, true, ok ? 'good' : 'bad');
     const secs = t.run.elapsed_s ? ` in ${Math.round(t.run.elapsed_s)} s` : '';
     this.log(`${t.task.title}: ${ok ? 'VERIFIED' : result}${secs}${t.run.calls != null ? ` · ${t.run.calls} model calls` : ''}`, ok ? 'done' : 'warn', 'board', true);
   }
@@ -410,16 +493,53 @@ export class LiveOffice {
   }
 
   // ------------------------------------------------------------ animation plumbing
+  /** Live events arrive in bursts; each visible step of an issue gets its own beat so it can be followed.
+   *  A backlog plays faster, so the floor never falls far behind the run. Returns when the beat starts. */
+  private beat(t: Track, animate: boolean) {
+    if (!animate) return 0;
+    const now = Date.now();
+    const at = Math.max(now, t.nextBeat);
+    const backlog = at - now;
+    t.nextBeat = at + (backlog > 9000 ? 500 : backlog > 4000 ? 1000 : BEAT_MS);
+    return at;
+  }
+
+  private later(at: number, fn: () => void) {
+    const wait = at - Date.now();
+    if (wait <= 0) fn();
+    else window.setTimeout(fn, wait);
+  }
+
+  private say(t: Track, who: string, text: string, animate: boolean, tone: Bubble['tone'] = 'say') {
+    if (!text) return;
+    const agentId = who === 'DEV' ? t.devId : who;
+    const name = this.agentById(agentId)?.name ?? who;
+    if (!animate) {                                  // already happened: it goes into the conversation, nobody re-enacts it
+      if (this.evAt && Date.now() - this.evAt < 180_000) this.chat(this.evAt, name, undefined, text, tone);
+      return;
+    }
+    const at = this.beat(t, true);
+    // one bubble per person at a time: an earlier one ends when the next starts
+    const rest = (this.s.bubbles ?? []).map((b) => (b.agentId === agentId && b.until > at ? { ...b, until: at } : b));
+    this.s.bubbles = [...rest, { id: `B${this.bubbleId++}`, agentId, text, tone, start: at, until: at + SAY_MS }];
+    this.chat(at, name, undefined, text, tone);
+  }
+
+  private chat(at: number, from: string, to: string | undefined, text: string, tone: Bubble['tone']) {
+    this.s.chatter = [...(this.s.chatter ?? []), { id: this.chatId++, at, from, to, text, tone }].slice(-40);
+  }
   private walk(a: Agent, room: RoomId) {
     a.at = room;
     a.status = 'walking';
     this.walkEnds.set(a.id, { until: Date.now() + WALK_MS, then: 'idle' });
   }
 
-  private handOver(t: Track, room: RoomId, worker: string, caption: string, animate: boolean) {
+  /** Moves the card; returns when its flight starts (0 when nothing is animated). */
+  private handOver(t: Track, room: RoomId, worker: string, caption: string, animate: boolean): number {
     const from = t.task.room;
+    let at = 0;
     if (animate && from !== room) {
-      const now = Date.now();
+      const now = (at = this.beat(t, true));
       const fromAgent = t.worker === 'DEV' ? t.devId : t.worker;
       const toAgent = worker === 'DEV' ? t.devId : worker;
       const f: Flight = {
@@ -434,7 +554,7 @@ export class LiveOffice {
         toAgent,
         landAt: this.s.tick + 3,
         startWall: now,
-        durationMs: 1500,
+        durationMs: FLIGHT_MS,
       };
       this.s.flights = [...this.s.flights, f];
       const fromName = this.agentById(fromAgent)?.name ?? 'Issue Desk';
@@ -442,15 +562,22 @@ export class LiveOffice {
       const h: Handoff = { id: this.handoffId++, tick: this.s.tick, day: this.s.day, taskId: t.task.id, title: t.task.title, fromName, toName, fromRoom: from, toRoom: room };
       this.s.handoffs = [h, ...this.s.handoffs].slice(0, 200);
       this.log(`${fromName} → ${toName}: ${t.task.title} (${caption})`, 'move', room, true);
+      this.chat(now, fromName, toName, caption, 'say');
+    }
+    if (!animate && from !== room && this.evAt && Date.now() - this.evAt < 180_000) {
+      const name = (w: string) => this.agentById(w === 'DEV' ? t.devId : w)?.name ?? w;
+      this.chat(this.evAt, name(t.worker), name(worker), caption, 'say');
     }
     t.task.room = room;
     if (t.task.trail[t.task.trail.length - 1] !== room) t.task.trail = [...t.task.trail, room];
+    return at;
   }
 
   private tick() {
     const now = Date.now();
     this.s.tick += 1;
-    this.s.flights = this.s.flights.filter((f) => now < f.startWall + f.durationMs + 300);
+    this.s.flights = this.s.flights.filter((f) => now < f.startWall + f.durationMs + 800);
+    this.s.bubbles = (this.s.bubbles ?? []).filter((b) => b.until > now && b.tone !== 'think');
     // finished issues: after a moment in the Evidence Room the developer walks out
     for (const [id, t] of this.tracks) {
       if (t.stage !== 'done' || !t.endedAt) continue;
@@ -489,6 +616,11 @@ export class LiveOffice {
       // the developer is the model: while its call is in flight it is thinking, otherwise it is at work
       a.status = t ? (own && now < own.thinkingUntil ? 'thinking' : 'working') : 'idle';
       a.taskId = t?.task.id;
+    }
+    for (const t of this.tracks.values()) {
+      if (t.stage === 'done' || now >= t.thinkingUntil) continue;
+      const secs = t.callStart ? Math.round((now - t.callStart) / 1000) : 0;
+      this.s.bubbles = [...(this.s.bubbles ?? []), { id: `think-${t.devId}`, agentId: t.devId, text: secs ? `${secs}s` : '', tone: 'think', start: now - 1, until: now + 900 }];
     }
     const open = [...this.tracks.values()].filter((t) => t.stage !== 'done').length;
     this.s.phase = open ? 'build' : 'idle';

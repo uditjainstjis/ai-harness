@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { sceneFrames } from '../art/pixelPeople';
 import { FLOOR, ROLES, ROOM_BY_ID, ROOMS } from '../domain/office';
-import { isBusy, type Agent, type Flight, type OfficeState, type Room, type RoomId, type Task } from '../domain/types';
+import { isBusy, type Agent, type Bubble, type Flight, type OfficeState, type Room, type RoomId, type Task } from '../domain/types';
 
 // Layout grid for desks inside a room.
 const CELL_W = 64;
@@ -73,12 +73,15 @@ export function Floor({
   selected,
   onSelect,
   live = false,
+  mini = false,
 }: {
   state: OfficeState;
   selected?: string;
   onSelect: (id?: string) => void;
   /** real runs: finished work lands in the Evidence Room as proven, nothing is "shipped" until a PR is opened */
   live?: boolean;
+  /** the small preview on the Studio pages: speech is drawn larger so it reads at that size */
+  mini?: boolean;
 }) {
   // Stable per-room ordering so avatars don't shuffle every tick.
   const byRoom = new Map<RoomId, Agent[]>();
@@ -145,7 +148,8 @@ export function Floor({
         />
       ))}
 
-      <FlightLayer flights={state.flights} positions={positions} />
+      <FlightLayer flights={state.flights} positions={positions} scale={mini ? 1.6 : 1} />
+      {state.bubbles && <BubbleLayer bubbles={state.bubbles} positions={positions} mini={mini} />}
     </svg>
   );
 }
@@ -335,7 +339,7 @@ function AgentSprite({
   );
 }
 
-function FlightLayer({ flights, positions }: { flights: Flight[]; positions: Map<string, { x: number; y: number }> }) {
+function FlightLayer({ flights, positions, scale = 1 }: { flights: Flight[]; positions: Map<string, { x: number; y: number }>; scale?: number }) {
   const [now, setNow] = useState(() => performance.now());
   useEffect(() => {
     if (!flights.length) return;
@@ -348,33 +352,141 @@ function FlightLayer({ flights, positions }: { flights: Flight[]; positions: Map
     return () => cancelAnimationFrame(raf);
   }, [flights.length]);
 
+  // startWall is Date.now()-based (the live engine) or performance-based (the simulation)
+  const wall = (f: Flight) => (f.startWall > 1e12 ? Date.now() : now);
   return (
     <g>
       {flights.map((f) => {
-        if (now < f.startWall) return null; // staggered hand-offs wait their turn
+        const clock = wall(f);
+        if (clock < f.startWall) return null; // staggered hand-offs wait their turn
         const a = (f.fromAgent && positions.get(f.fromAgent)) || center(f.from);
         const b = (f.toAgent && positions.get(f.toAgent)) || center(f.to);
         const from = { x: a.x, y: a.y - 30 };
         const to = { x: b.x, y: b.y - 30 };
         const lift = Math.max(40, Math.hypot(to.x - from.x, to.y - from.y) * 0.25);
         const c = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - lift };
-        const t = Math.min(1, (now - f.startWall) / f.durationMs);
+        const t = Math.min(1, (clock - f.startWall) / f.durationMs);
         const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         const px = Math.round((1 - e) * (1 - e) * from.x + 2 * (1 - e) * e * c.x + e * e * to.x);
         const py = Math.round((1 - e) * (1 - e) * from.y + 2 * (1 - e) * e * c.y + e * e * to.y);
         const caption = `${f.label.replace('T-', '#')} ${f.caption}`;
+        const landed = clock - f.startWall - f.durationMs;         // > 0: the ring where it arrived
+        const d = `M${from.x},${from.y} Q${c.x},${c.y} ${to.x},${to.y}`;
         return (
           <g key={f.id}>
-            <path d={`M${from.x},${from.y} Q${c.x},${c.y} ${to.x},${to.y}`} className="flight-path" shapeRendering="auto" />
-            <g transform={`translate(${px}, ${py})`}>
-              <g transform="translate(-16, -10) scale(1.5)">
-                <Envelope kind={f.kind} />
+            <path d={d} className="flight-path" shapeRendering="auto" />
+            <path d={d} className="flight-path-live" shapeRendering="auto" pathLength={100} strokeDasharray={`${Math.round(e * 100)} 100`} />
+            {landed > 0 ? (
+              <circle cx={to.x} cy={to.y} r={10 + (landed / 800) * 46} className="flight-ring" shapeRendering="auto" style={{ opacity: Math.max(0, 1 - landed / 800) }} />
+            ) : (
+              <g transform={`translate(${px}, ${py}) scale(${scale})`}>
+                <circle r="17" className="flight-glow" shapeRendering="auto" />
+                <g transform="translate(-16, -10) scale(1.5)">
+                  <Envelope kind={f.kind} />
+                </g>
+                <rect x={-caption.length * 3.5 - 5} y="14" width={caption.length * 7 + 10} height="16" className="flight-chip" />
+                <text y="26" textAnchor="middle" className="flight-caption">
+                  {caption}
+                </text>
               </g>
-              <rect x={-caption.length * 3.5 - 5} y="14" width={caption.length * 7 + 10} height="16" className="flight-chip" />
-              <text y="26" textAnchor="middle" className="flight-caption">
-                {caption}
-              </text>
+            )}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Wraps speech into lines of at most n characters (pixel font, fixed width). */
+function wrap(text: string, n: number) {
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of text.split(' ')) {
+    if ((cur + ' ' + w).trim().length > n && cur) {
+      lines.push(cur);
+      cur = w;
+    } else cur = (cur + ' ' + w).trim();
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 3);
+}
+
+/** What people are saying right now: one bubble per person, the newest wins; the thought cloud while the model
+ *  answers. Neighbours' bubbles are stacked instead of drawn over each other. */
+function BubbleLayer({ bubbles, positions, mini }: { bubbles: Bubble[]; positions: Map<string, { x: number; y: number }>; mini: boolean }) {
+  const now = Date.now();
+  const shown = new Map<string, Bubble>();
+  for (const b of bubbles) {
+    if (now < b.start || now >= b.until) continue;
+    const cur = shown.get(b.agentId);
+    if (!cur || (cur.tone === 'think' && b.tone !== 'think') || (b.tone !== 'think' && b.start > cur.start)) shown.set(b.agentId, b);
+  }
+  const fs = mini ? 27 : 17;
+  const cw = fs * 0.5;
+  const k = mini ? 1.5 : 1;
+
+  type Box = { b: Bubble; p: { x: number; y: number }; x: number; y: number; w: number; h: number; tip: number; below: boolean; lines: string[] };
+  const boxes: Box[] = [];
+  // older bubbles keep their place; newer ones move out of the way
+  for (const b of [...shown.values()].sort((a, c) => a.start - c.start)) {
+    const p = positions.get(b.agentId);
+    if (!p) continue;
+    const tipY = p.y - 74;
+    const think = b.tone === 'think';
+    const lines = think ? [] : wrap(b.text, mini ? 24 : 30);
+    const w = think ? (b.text ? 86 : 60) * k : Math.max(...lines.map((l) => l.length)) * cw + 18;
+    const h = think ? 30 * k : lines.length * fs * 0.95 + 12;
+    const x = Math.min(Math.max(think ? p.x + 6 : p.x - w / 2, 4), FLOOR.w - w - 4);
+    // places to try, in order: above the speaker, under the desk, then further up or down; the first free one wins
+    const above = tipY - (think ? 14 : 10) - h;
+    const under = p.y + 26;
+    const slots: { y: number; below: boolean }[] = [];
+    for (let i = 0; i < 4; i++) {
+      if (above - i * (h + 6) >= 4) slots.push({ y: above - i * (h + 6), below: false });
+      if (!think && under + i * (h + 6) + h <= FLOOR.h - 4) slots.push({ y: under + i * (h + 6), below: true });
+    }
+    const free = (c: { y: number }) => !boxes.some((o) => x < o.x + o.w + 4 && o.x < x + w + 4 && c.y < o.y + o.h + 4 && o.y < c.y + h + 4);
+    const slot = slots.find(free) ?? slots[0] ?? { y: Math.max(4, above), below: false };
+    const { y, below } = slot;
+    const tip = below ? p.y + 16 : tipY;
+    boxes.push({ b, p, x, y, w, h, tip, below, lines });
+  }
+
+  return (
+    <g className="bubbles">
+      {boxes.map(({ b, p, x, y, w, h, tip, below, lines }) => {
+        if (b.tone === 'think') {
+          return (
+            <g key={b.agentId + '-think'} className="think">
+              <circle cx={p.x + 4} cy={p.y - 70} r={mini ? 5 : 3} className="think-puff" />
+              <circle cx={p.x + 10} cy={p.y - 80} r={mini ? 7 : 5} className="think-puff" />
+              <rect x={x} y={y} width={w} height={h} rx={h / 2} className="think-cloud" shapeRendering="auto" />
+              {[0, 1, 2].map((i) => (
+                <circle key={i} cx={x + h * 0.55 + i * h * 0.45} cy={y + h / 2} r={h * 0.12} className={`think-dot d${i}`} shapeRendering="auto" />
+              ))}
+              {b.text && (
+                <text x={x + w - h * 0.35} y={y + h / 2 + fs * 0.32} textAnchor="end" className="think-secs" style={{ fontSize: fs }}>
+                  {b.text}
+                </text>
+              )}
             </g>
+          );
+        }
+        // the tail reaches from the bubble's nearest edge to the speaker, even when the bubble was moved aside
+        const edge = below || y > tip ? y + 1 : y + h - 1;
+        const tx = Math.min(Math.max(p.x, x + 10), x + w - 10);
+        const leaving = b.until - now < 450;
+        return (
+          <g key={b.id} className={`bubble tone-${b.tone}${leaving ? ' leaving' : ''}`} style={{ transformOrigin: `${p.x}px ${tip}px` }}>
+            <rect x={x + 3} y={y + 3} width={w} height={h} className="bubble-shadow" />
+            <path d={`M${tx - 7},${edge} L${p.x},${tip} L${tx + 7},${edge}`} className="bubble-tail" />
+            <rect x={x} y={y} width={w} height={h} className="bubble-box" />
+            <path d={`M${tx - 6},${edge} L${tx + 6},${edge}`} className="bubble-seam" />
+            {lines.map((l, i) => (
+              <text key={i} x={x + 9} y={y + 6 + (i + 0.78) * fs * 0.95} className="bubble-text" style={{ fontSize: fs }}>
+                {l}
+              </text>
+            ))}
           </g>
         );
       })}

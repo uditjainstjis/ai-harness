@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Ticker } from './live/Ticker';
 import { Floor } from './components/Floor';
 import { OrgChart } from './components/OrgChart';
 import { Roster } from './components/Roster';
@@ -80,8 +81,9 @@ export function App() {
         title="Open the whole office"
       >
         <div className="floor-wrap">
-          <Floor state={state} selected={undefined} onSelect={() => undefined} live={LIVE} />
+          <Floor state={state} selected={undefined} onSelect={() => undefined} live={LIVE} mini />
         </div>
+        {LIVE && <Ticker chatter={state.chatter} lines={2} />}
         <div className="mini-bar">
           <span className="live-dot">{open ? `${open} issue${open === 1 ? '' : 's'} · ${working} at work` : 'Team ready · live'}</span>
           <span>Open the office ↗</span>
@@ -171,7 +173,9 @@ export function App() {
       <main className="main">
         <div className="floor-wrap">
           {view === 'floor' ? (
-            <Floor state={state} selected={selected} onSelect={setSelected} live={LIVE} />
+            <>
+              <Floor state={state} selected={selected} onSelect={setSelected} live={LIVE} />
+            </>
           ) : view === 'org' ? (
             <OrgChart state={state} selected={selected} onSelect={setSelected} />
           ) : (

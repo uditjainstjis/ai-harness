@@ -387,6 +387,24 @@ textarea {
   stroke-dasharray: 4 6;
   opacity: 0.35;
 }
+.flight-path-live {
+  fill: none;
+  stroke: var(--coral);
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 4px rgba(255, 107, 107, 0.7));
+}
+.flight-glow {
+  fill: rgba(255, 217, 61, 0.45);
+  animation: glow-pulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes glow-pulse { from { r: 13; opacity: 0.55; } to { r: 20; opacity: 0.95; } }
+.flight-ring {
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 4;
+}
 .flight-chip {
   fill: var(--cream-50);
   stroke: var(--ink-900);
@@ -1245,3 +1263,45 @@ table.fleet-table tbody tr:hover { background: var(--lemon-light); }
 .tag-thinking { fill: var(--lilac); }
 .badge-thinking { background: color-mix(in srgb, var(--lilac) 22%, var(--cream-100)); }
 .badge-thinking i { background: var(--lilac); animation: step-pulse 1s steps(2) infinite; }
+
+/* live: people say what the step they just did found (bubbles), and think while the model answers */
+.bubble { animation: bubble-pop 0.28s cubic-bezier(0.2, 1.6, 0.4, 1) both; transition: opacity 0.4s; }
+.bubble.leaving { opacity: 0; }
+@keyframes bubble-pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.bubble-box { fill: var(--cream-50, #fffdf6); stroke: var(--ink-900); stroke-width: 3; }
+.bubble-shadow { fill: rgba(26, 19, 32, 0.28); }
+.bubble-tail { fill: var(--cream-50, #fffdf6); stroke: var(--ink-900); stroke-width: 3; stroke-linejoin: miter; }
+.bubble-text { font-family: var(--pixel-mono); fill: var(--ink-900); }
+.bubble.tone-good .bubble-box, .bubble.tone-good .bubble-tail { fill: #e3f8e7; stroke: #2f7a44; }
+.bubble.tone-bad .bubble-box, .bubble.tone-bad .bubble-tail { fill: #ffe7e7; stroke: #b8403f; }
+.think-cloud, .think-puff { fill: #efe8ff; stroke: var(--ink-900); stroke-width: 2.5; }
+.think-dot { fill: var(--ink-900); animation: think-dot 1.2s ease-in-out infinite; }
+.think-dot.d1 { animation-delay: 0.2s; }
+.think-dot.d2 { animation-delay: 0.4s; }
+@keyframes think-dot { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+.think-secs { font-family: var(--pixel-mono); fill: #5b3fb5; }
+.think { animation: think-bob 1.6s ease-in-out infinite; }
+@keyframes think-bob { 50% { transform: translateY(-3px); } }
+
+/* live: the floor's running conversation */
+.floor-wrap { position: relative; }
+.ticker { position: absolute; left: 26px; bottom: 26px; max-width: min(560px, 62%); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+.ticker-line { background: rgba(26, 19, 32, 0.88); color: var(--cream-100); font-family: var(--pixel-mono); font-size: 19px; line-height: 1.1; padding: 3px 10px; box-shadow: 0 0 0 2px var(--cream-200); animation: ticker-in 0.35s ease-out both; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ticker-line b { color: var(--sun, #ffd93d); font-weight: normal; }
+.ticker-line.tone-good { box-shadow: 0 0 0 2px var(--mint); }
+.ticker-line.tone-bad { box-shadow: 0 0 0 2px var(--coral); }
+.ticker-line.old { opacity: 0.55; }
+@keyframes ticker-in { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.app.mini .ticker { left: 10px; bottom: 46px; max-width: calc(100% - 20px); }
+.app.mini .ticker-line { font-size: 17px; }
+
+.convo { display: flex; flex-direction: column; gap: 3px; max-height: 250px; overflow: hidden; }
+.convo-line { font-family: var(--pixel-mono); font-size: 18px; line-height: 1.05; padding: 3px 7px; background: var(--cream-50); box-shadow: inset 3px 0 0 var(--ink-700); animation: ticker-in 0.35s ease-out both; }
+.convo-line b { font-weight: normal; color: #7a4bd6; }
+.convo-line span { display: block; color: var(--ink-900); }
+.convo-line.tone-good { box-shadow: inset 3px 0 0 var(--mint); }
+.convo-line.tone-bad { box-shadow: inset 3px 0 0 var(--coral); }
+.convo-line:nth-child(n + 5) { opacity: 0.6; }
+.bubble-seam { stroke: var(--cream-50, #fffdf6); stroke-width: 4; }
+.bubble.tone-good .bubble-seam { stroke: #e3f8e7; }
+.bubble.tone-bad .bubble-seam { stroke: #ffe7e7; }
