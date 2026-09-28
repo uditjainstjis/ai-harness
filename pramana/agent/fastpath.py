@@ -248,9 +248,11 @@ class FastPath:
             reply = self._ask(msgs, res)
             if reply is None:
                 return self._done(res, t0)
-            if "<<<<<<< SEARCH" not in reply and (self._stop in ("length", "max_tokens") or len(reply) > 12000):
+            opened, closed = reply.count("<<<<<<< SEARCH"), reply.count(">>>>>>> REPLACE")
+            if (not opened or opened > closed) and (self._stop in ("length", "max_tokens") or len(reply) > 12000):
                 # measured on real repos: a model that reasons in its answer ran out of room before any edit
-                # (6 of 13 first replies). Its reasoning is kept; one short call turns it into the answer.
+                # (6 of 13 first replies), or in the middle of one (recipes #4: cut inside the test file, both
+                # rounds). Its reasoning is kept; one short call turns it into the answer.
                 self._keep(reply, rnd * 10)
                 self.events.emit("log", level="info", message="fast path: the reply ran out of room while reasoning; "
                                  "asking for the final answer")
@@ -275,7 +277,8 @@ class FastPath:
                 resp = self.model.chat(msgs, tools=None, temperature=0.0)
                 text = resp.text or ""
                 self._stop = (resp.stop_reason or "").lower()
-                self.events.emit("llm", text=text[:1500], total_tokens=self.model.usage.total_tokens, cached_tokens=0)
+                self.events.emit("llm", text=text[:1500], total_tokens=self.model.usage.total_tokens, cached_tokens=0,
+                                 chars=len(text), stop=self._stop)
                 return text
             except (ModelUnresponsive, Cancelled):
                 raise                                  # no point escalating to more calls on a dead endpoint

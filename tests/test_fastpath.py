@@ -135,6 +135,18 @@ def test_a_reply_cut_off_while_reasoning_does_not_use_up_the_second_round(tmp_pa
     assert res.usage.calls == 3                      # reasoning, finish-now answer, corrected answer
 
 
+def test_a_reply_cut_off_inside_its_first_edit_is_rescued(tmp_path):
+    """Measured on recipes #4 (120B): both rounds were ~32k chars of reasoning cut off while writing the test file.
+    The half-written block has a SEARCH marker, which used to hide the cut-off from the rescue."""
+    repo, cfg = _proj(tmp_path)
+    half = {"text": "We are given an issue. " * 40 + "\n.pramana/test_issue.py\n<<<<<<< SEARCH\n=======\nfrom mathx", "stop_reason": "length"}
+    bad_edit = {"text": REPLY.replace("    return sum(xs) / len(xs)\n=======", "    return sum(values) / len(values)\n=======")}
+    model = ChatModel(MockLLM([half, bad_edit, {"text": REPLY}]), tool_mode="native", name="mock", provider="mock")
+    res = Orchestrator(cfg, Events(), model=model).solve(repo, issue_from_text("mean([]) raises ZeroDivisionError\n\nIt should return 0.0."))
+    assert res.status == "verified", res.error
+    assert res.usage.calls == 3                      # cut-off reply, finish-now answer, corrected answer
+
+
 FUNC = ('def mean(xs):\n    """Average of xs."""\n    # sum then divide\n    total = 0\n    for x in xs:\n'
         '        total += x\n    count = len(xs)\n    return total / count\n')
 
