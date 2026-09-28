@@ -12,3 +12,5 @@ build/
 dist/
 /.claude/
 node_modules/
+office/.claude/
+*.tsbuildinfo
