@@ -10,6 +10,7 @@ PY=${PRAMANA_BUILD_PYTHON:-python3.12}
 command -v "$PY" >/dev/null || PY=python3
 
 echo "==> build environment: $BV"
+rm -rf build/lib build/bdist.*      # setuptools keeps old files here; the office build renames its assets every time
 if command -v uv >/dev/null; then
   uv venv -q --allow-existing --python "$PY" "$BV"
   uv pip install -q --python "$BV/bin/python" . pyinstaller pywebview
