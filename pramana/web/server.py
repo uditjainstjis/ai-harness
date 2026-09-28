@@ -689,10 +689,13 @@ def make_handler(studio: Studio):
             p = u.path
             if p in ("/", "/index.html"):
                 return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if p in ("/office", "/office/"):             # the live office floor (built from office/ into static/office)
+                return self._send(302, b"", "text/plain", {"location": "/static/office/index.html"})
             if p.startswith("/static/"):
                 f = (STATIC / p[len("/static/"):]).resolve()
                 if f.is_relative_to(STATIC) and f.is_file():
-                    ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}.get(f.suffix, "application/octet-stream")
+                    ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".html": "text/html; charset=utf-8",
+                             ".png": "image/png", ".json": "application/json", ".woff2": "font/woff2"}.get(f.suffix, "application/octet-stream")
                     return self._send(200, f.read_bytes(), ctype)
                 return self._send(404, b"not found", "text/plain")
             if p == "/api/model":
@@ -709,7 +712,7 @@ def make_handler(studio: Studio):
             if mb:
                 bt = studio.batches.get(mb.group(1))
                 return self._json(bt.view(studio.runs) if bt else {"error": "no such batch"}, 200 if bt else 404)
-            m = re.fullmatch(r"/api/runs/([\w-]+)(/events|/patch|/report|/github)?", p)
+            m = re.fullmatch(r"/api/runs/([\w-]+)(/events\.json|/events|/patch|/report|/github)?", p)
             if m:
                 run = studio.runs.get(m.group(1))
                 if not run:
@@ -717,6 +720,11 @@ def make_handler(studio: Studio):
                 sub = m.group(2)
                 if sub == "/github":
                     return self._json(studio.github_preview(run, (parse_qs(u.query).get("kind") or ["pr"])[0]))
+                if sub == "/events.json":   # short polls (the live office follows many runs; browsers cap open streams at 6)
+                    run.load_events()
+                    since = int((parse_qs(u.query).get("since") or ["0"])[0])
+                    return self._json({"events": run.events[since:since + 500], "next": min(len(run.events), since + 500),
+                                       "status": run.status})
                 if sub == "/events":
                     run.load_events()
                     return self._stream(run, int((parse_qs(u.query).get("since") or ["0"])[0]))

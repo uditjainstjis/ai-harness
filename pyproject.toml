@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pramana"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pramana: an autonomous coding-agent harness whose patches carry their own proof."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -24,7 +24,7 @@ pramana = "pramana.cli:main"
 include = ["pramana*"]
 
 [tool.setuptools.package-data]
-pramana = ["web/static/*"]
+pramana = ["web/static/*", "web/static/office/*", "web/static/office/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

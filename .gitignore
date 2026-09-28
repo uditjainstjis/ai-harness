@@ -11,3 +11,4 @@ workspace/
 build/
 dist/
 /.claude/
+node_modules/

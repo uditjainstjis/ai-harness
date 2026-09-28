@@ -20,6 +20,12 @@ make test                     # offline unit tests + (with a key) the end-to-end
 the report, and says which API, endpoint and model it is using. On a machine without a display, `make run` serves the app and runs the
 terminal version in the same session.
 
+**Live office** (🏢 in the top bar, or `/office`): every run as a pixel-art company floor. Each department is a real stage of
+the harness (Environment, Triage, Localization, Reproduction, Engineering, Proof Lab, Blind Test Lab, Review, Release) and every
+hand-off is an event the run actually emitted; each issue in a batch gets its own developer, and tokens are the provider's real
+counts. Built from [`office/`](office/) (VirtualOffice, with pixel art from Munder Difflin, MIT; see
+[`office/THIRD_PARTY_NOTICES.md`](office/THIRD_PARTY_NOTICES.md)); `?demo` shows the original simulated company.
+
 **Mac app:** download `Pramana-<version>-macos-arm64.dmg` from the
 [Releases](https://github.com/uditjainstjis/ai-harness/releases) page, drag Pramana to Applications and open it
 (first time: System Settings → Privacy & Security → *Open Anyway*, since the app is not notarized). It asks for your

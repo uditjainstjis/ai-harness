@@ -15,13 +15,15 @@
   </div>
   <div class="top-right">
     <button class="btn stop-btn stop-all" id="stop-all" onclick="stopAll()" hidden title="Cancel every run, abort model calls, kill running commands">■ Stop everything</button>
+    <a class="btn" href="/office" title="Watch every agent of every run live, department by department">🏢 Office</a>
     <button class="model-pill" id="model-pill" onclick="openSettings()"><span class="dot"></span><span id="model-text">checking model…</span></button>
     <button class="icon-btn" title="Light / dark" onclick="toggleTheme()">◐</button>
   </div>
 </header>
 
 <main id="home" class="view">
-  <section class="hero">
+  <section class="hero hero-split">
+   <div class="hero-main">
     <h1>What should I fix?</h1>
     <p class="lede">Describe it in plain words and give me the repository. I reproduce the problem, change the code,
       and prove the fix on the original and the patched code before I call it done.</p>
@@ -50,6 +52,16 @@
     </div>
     <div id="api-line" class="api-line"></div>
     <div class="demos"><span class="muted">No repo handy? Try a real bug:</span><span id="demo-chips"></span></div>
+   </div>
+   <aside class="office-card card" onclick="location.href='/office'" title="Open the whole office">
+     <div class="office-head"><span>🏢 Your team, live</span><span class="office-open">Open the office ↗</span></div>
+     <div class="office-frame">
+       <iframe src="/static/office/index.html?mini" title="Pramana's live office" tabindex="-1"></iframe>
+       <div class="office-click"></div>
+     </div>
+     <div class="office-foot">Every person here is a real step of a real run: setup, triage, finding the code, the fix, and the
+       proof on the original and the patched code. Each issue gets its own developer.</div>
+   </aside>
   </section>
   <section class="recent" id="recent-wrap" hidden><h3>Recent runs</h3><div id="recent"></div></section>
 </main>

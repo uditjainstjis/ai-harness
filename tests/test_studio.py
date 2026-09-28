@@ -117,3 +117,24 @@ def test_host_python_is_a_real_interpreter_inside_a_frozen_app(monkeypatch):
     from pramana.repo.bootstrap import host_python
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     assert "python" in host_python() and host_python() != sys.executable
+
+
+def test_live_office_is_served_by_the_studio(tmp_path):
+    import http.client
+    from pramana.web.server import start
+    url, studio, httpd = start(port=18765, overrides={"paths": {"runs_dir": str(tmp_path / "runs"), "workspace_dir": str(tmp_path / "ws")}})
+    try:
+        host, port = url.split("//")[1].split(":")
+        c = http.client.HTTPConnection(host, int(port), timeout=10)
+        c.request("GET", "/office")
+        r = c.getresponse(); r.read()
+        assert r.status == 302 and r.getheader("location") == "/static/office/index.html"
+        c.request("GET", "/static/office/index.html")
+        r = c.getresponse(); html = r.read().decode()
+        assert r.status == 200 and "text/html" in r.getheader("content-type") and 'id="root"' in html
+        asset = html.split('src="./')[1].split('"')[0]
+        c.request("GET", "/static/office/" + asset)
+        r = c.getresponse(); body = r.read()
+        assert r.status == 200 and b"Pramana Office" in body          # the live build, not the demo-only one
+    finally:
+        httpd.shutdown()

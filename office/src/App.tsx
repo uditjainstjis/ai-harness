@@ -1,0 +1,171 @@
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Floor } from './components/Floor';
+import { OrgChart } from './components/OrgChart';
+import { Roster } from './components/Roster';
+import { SidePanel } from './components/SidePanel';
+import { PHASE_LINE } from './domain/office';
+import type { OfficeState } from './domain/types';
+import { OfficeSim, TICKS_PER_DAY } from './sim/engine';
+import { LiveOffice, applyLiveLabels } from './live/liveOffice';
+import { useFullscreen } from './useFullscreen';
+
+/** Live (real Pramana runs) unless ?demo is in the URL; the simulation stays one click away. */
+const PARAMS = new URLSearchParams(window.location.search);
+const LIVE = !PARAMS.has('demo');
+/** ?mini: just the floor, as the live preview on Studio's home screen; a click opens the whole office. */
+const MINI = PARAMS.has('mini');
+if (LIVE) applyLiveLabels();
+const sim: OfficeSim = LIVE ? (new LiveOffice('') as unknown as OfficeSim) : new OfficeSim();
+
+function Playback({ state }: { state: OfficeState }) {
+  return (
+    <>
+      <button className="btn" onClick={() => sim.setPaused(!state.paused)}>
+        {state.paused ? '▶ Resume' : '❚❚ Pause'}
+      </button>
+      <button className="btn" disabled={!state.paused} onClick={() => sim.stepOnce()} title="Pause first, then advance one step at a time">
+        Step ›
+      </button>
+      <div className="seg">
+        {[0.5, 1, 2, 4].map((s) => (
+          <button key={s} className={state.speed === s ? 'active' : ''} onClick={() => sim.setSpeed(s)}>
+            {s}×
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+export function App() {
+  const state = useSyncExternalStore(sim.subscribe, sim.getState);
+  const [selected, setSelected] = useState<string>();
+  const [view, setView] = useState<'floor' | 'org'>('floor');
+  const appRef = useRef<HTMLDivElement>(null);
+  const fs = useFullscreen(appRef);
+
+  useEffect(() => {
+    sim.start();
+    return () => sim.stop();
+  }, []);
+
+  // F toggles full screen, unless you're typing in the brief form.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'f') fs.toggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fs]);
+
+  if (MINI) {
+    const working = state.agents.filter((a) => a.status === 'working' || a.status === 'walking').length;
+    const open = state.tasks.filter((t) => t.room !== 'board').length;
+    return (
+      <div
+        className="app mini"
+        onClick={() => {
+          (window.top ?? window).location.href = '/office';
+        }}
+        title="Open the whole office"
+      >
+        <div className="floor-wrap">
+          <Floor state={state} selected={undefined} onSelect={() => undefined} />
+        </div>
+        <div className="mini-bar">
+          <span className="live-dot">{open ? `${open} issue${open === 1 ? '' : 's'} · ${working} at work` : 'Team ready · live'}</span>
+          <span>Open the office ↗</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Office hours run 9:00–18:00 across one simulated day.
+  const minutes = Math.floor(((state.tick % TICKS_PER_DAY) / TICKS_PER_DAY) * 9 * 60);
+  const clock = `${String(9 + Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  const phase = PHASE_LINE.find((p) => p.id === state.phase);
+
+  return (
+    <div ref={appRef} className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="logo" aria-hidden>
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+          <div>
+            <div className="brand-name">{LIVE ? 'Pramana Office' : 'Virtual Office'}</div>
+            <div className="muted small">{state.project ? state.project.name : 'No active project'}</div>
+          </div>
+        </div>
+        <div className="clock">
+          <span className="clock-day">Day {state.day}</span>
+          <span className="clock-time">{clock}</span>
+          <span className="pill">{phase ? phase.label : 'Waiting for a client'}</span>
+          {LIVE ? (
+            <span className="pill" title="Every move is a real event from a Pramana run.">Live · real runs</span>
+          ) : (
+            <span className="pill pill-sim" title="Agents are simulated. Real Claude agents plug into the same events.">
+              Simulation
+            </span>
+          )}
+        </div>
+        <div className="controls">
+          <div className="seg" role="tablist" aria-label="View">
+            <button role="tab" aria-selected={view === 'floor'} className={view === 'floor' ? 'active' : ''} onClick={() => setView('floor')}>
+              Office floor
+            </button>
+            <button role="tab" aria-selected={view === 'org'} className={view === 'org' ? 'active' : ''} onClick={() => setView('org')}>
+              Org chart
+            </button>
+          </div>
+          {!LIVE && <Playback state={state} />}
+          {!LIVE && (
+            <label className="toggle">
+              <input type="checkbox" checked={state.autoApprove} onChange={(e) => sim.setAutoApprove(e.target.checked)} />
+              Auto-approve gates
+            </label>
+          )}
+          <a className="btn" href={LIVE ? '?demo' : '?'} title={LIVE ? 'The original simulated company' : 'Back to real runs'}>
+            {LIVE ? 'Demo simulation' : 'Live runs'}
+          </a>
+          {LIVE && (
+            <a className="btn" href="/" title="Back to Pramana Studio">
+              ← Studio
+            </a>
+          )}
+          {fs.supported && (
+            <button className="btn" onClick={fs.toggle} title={fs.active ? 'Exit full screen (Esc or F)' : 'Full screen (F)'}>
+              {fs.active ? '⛶ Exit full screen' : '⛶ Full screen'}
+            </button>
+          )}
+          <button
+            className="btn"
+            onClick={() => {
+              setSelected(undefined);
+              sim.reset();
+            }}
+          >
+            Reset
+          </button>
+        </div>
+      </header>
+
+      <main className="main">
+        <div className="floor-wrap">
+          {view === 'floor' ? (
+            <Floor state={state} selected={selected} onSelect={setSelected} />
+          ) : (
+            <OrgChart state={state} selected={selected} onSelect={setSelected} />
+          )}
+        </div>
+        <SidePanel state={state} sim={sim} selected={selected} live={LIVE} />
+      </main>
+
+      <Roster state={state} selected={selected} onSelect={setSelected} />
+    </div>
+  );
+}
